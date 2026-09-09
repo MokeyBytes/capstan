@@ -43,11 +43,13 @@ The glossary is the repository stating what it calls things, so it gives this ax
 
 **A name that contradicts the glossary.** Cite the term. Blocking when other code depends on the name: a type, an export, a column, anything public. Worth doing when it is local to one file. This is Mysterious Name with the rule already written down.
 
-**A name for something the glossary does not hold.** Not a defect, and grade nothing. The interview settles the words it anticipated; the build discovers the things nobody thought to name. Report it as a vocabulary gap for the Architect to settle.
+**A name for something the glossary does not hold.** Not a defect, and grade nothing; the smell baseline below does not reopen it. The interview settles the words it anticipated; the build discovers the things nobody thought to name. Report it as a vocabulary gap for the Architect to settle.
 
-Where the repository documents nothing, fall back on a smell baseline. Twelve, from Fowler:
+Where the repository documents nothing about the thing in front of you, fall back on a smell baseline: Fowler's smells, plus Capstan's own.
 
-Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest.
+Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest, **Restated Comment**.
+
+**Restated Comment** is a comment whose content is already visible in the code it sits above or beside. Fix: keep a comment where it carries something the code cannot say for itself — the reason behind a choice, the constraint it satisfies, the case that looks wrong until you know why it isn't — and drop the rest.
 
 Each is a labelled heuristic, never a hard violation. Say "possible Feature Envy" and state what it is followed by how to fix it, so the finding arrives with a move attached rather than a complaint.
 
