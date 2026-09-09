@@ -30,6 +30,7 @@ The words this repository uses, defined once. This describes Capstan itself; it 
 | Tracker surface | Which surface holds the Tracker for a Project: `tracker.md` in the Document home by default, or a GitHub Projects board when `capstan-tracker` names one. The choice, as against the artifact. |
 | Teardown | Emptying a Tracker surface after its Rows have moved to another one. Closes and removes; never deletes. |
 | Conforming comment | A comment whose whole body matches the merge-commit format `TRACKER-GITHUB.md` declares. A `merged` Row's issue carries exactly one; anything else on it is ordinary discussion. |
+| Restated Comment | A comment whose content is already visible in the code it sits above or beside. The thirteenth heuristic in `two-axis-review`'s smell baseline, and Capstan's own rather than Fowler's. Distinct from a Conforming comment, which is a GitHub issue comment and not code. |
 | Row | One slice's entry in the Tracker, whatever surface holds it. A table row under `tracker.md`; an issue, its status value and, at merge, a comment under a board. |
 | Setup | The `setup` skill. Configures where a Project's durable artifacts live, moves what is already there, and can be re-run. Operator-invoked, never part of an Effort. |
 | Front door | A skill the operator invokes directly, rather than one the model reaches for. Two: `effort` starts a run, `setup` configures where its artifacts live. Neither is a Discipline. |
