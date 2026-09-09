@@ -49,7 +49,7 @@ If you were given no worktree path, stop and say so. Do not work in the main cop
 
 Invoke the `test-first` skill and follow it; it owns the loop and the seam rule. The seam for your slice was agreed by the Architect and is in the plan.
 
-The `codebase-design` skill is loaded for you and supplies the words for structure while building.
+The `codebase-design` skill is loaded for you too and supplies the words for the structure you build: module, interface, depth, seam, adapter, leverage, locality. Use them exactly. **One of them already has a job here: the seam above is the plan's test boundary, not yours to pick; this skill's seam is where a module's interface lives, and where to put it is a design decision you do make.**
 
 For slices that produce no code, the equivalent still applies: define what would show this is wrong before you produce the thing.
 
