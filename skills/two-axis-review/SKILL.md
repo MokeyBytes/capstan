@@ -45,13 +45,13 @@ The glossary is the repository stating what it calls things, so it gives this ax
 
 **A name for something the glossary does not hold.** Not a defect, and grade nothing. The interview settles the words it anticipated; the build discovers the things nobody thought to name. Report it as a vocabulary gap for the Architect to settle.
 
-Where the repository documents nothing, fall back on a smell baseline. Twelve, from Fowler:
+Where the repository documents nothing, fall back on a smell baseline: Fowler's smells, plus Capstan's own.
 
-Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest.
+Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest, **Restated Comment**.
+
+**Restated Comment** is a comment whose content is already visible in the code it sits above or beside. Fix: keep a comment where it carries something the code cannot say for itself — the reason behind a choice, the constraint it satisfies, the case that looks wrong until you know why it isn't — and drop the rest.
 
 Each is a labelled heuristic, never a hard violation. Say "possible Feature Envy" and state what it is followed by how to fix it, so the finding arrives with a move attached rather than a complaint.
-
-One heuristic stands beside the twelve, Capstan's own: **Restated Comment**, a comment whose content is already visible in the line it sits next to. Say "possible Restated Comment" and point at the fix: keep a comment where it carries something the code cannot say for itself — the reason behind a choice, the constraint it satisfies, the case that looks wrong until you know why it isn't — and drop the rest, letting the line speak on its own.
 
 Skip anything a linter or typechecker already enforces. Reporting what CI would have caught wastes the one pass someone will actually read.
 
