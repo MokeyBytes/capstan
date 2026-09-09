@@ -54,7 +54,7 @@ The disciplines the roles pull in. The two front doors sit outside this table an
 | `to-questionnaire` | Architect | The other direction: open questions out to whoever holds the answers, aimed at the gap between what they know and what the effort needs. Vendored from Matt Pocock. |
 | `two-axis-review` | Builder, Reviewer | Standards and spec, answered independently, never blended into one verdict. |
 | `verify` | Architect | Runs the checks the repository declares against the merged result. A Reviewer reads a diff and skips what a typechecker would catch, on the grounds that CI catches it. This is that CI. |
-| `codebase-design` | Builder, Reviewer | The words for structure: module, interface, depth, seam, adapter, leverage, locality. Gives the standards axis something to judge interface shape against. Vendored from Matt Pocock, see [0003](.capstan/decisions/0003-adopt-deep-modules-as-the-design-standard.md). |
+| `codebase-design` | Builder, Reviewer | The words for structure: module, interface, depth, seam, adapter, leverage, locality. Supplies them while building, and gives the standards axis something to judge interface shape against. Vendored from Matt Pocock, see [0003](.capstan/decisions/0003-adopt-deep-modules-as-the-design-standard.md). |
 | `unslop` | Anything writing prose | Cuts AI tells from writing a person will read. |
 | `writing-for-agents` | You, editing this repo | The levers that make a document an agent consumes behave the same way every run. |
 
