@@ -55,6 +55,10 @@ Typecheck often. Run the single test file you are working in, repeatedly. Run th
 
 Running everything after every change is slow enough that people stop doing it, and that is worse than the discipline it was protecting.
 
+If this repository declares its own checks — a linter, a formatter, whatever its own CI runs — find them the way `verify` does; that skill owns the discovery order. Run them inside this loop, before you return, the same as the suite above.
+
+This is the seam: you run declared checks against your own slice, in your own worktree, before anyone else sees it. `verify` runs them again once every slice has merged, against an integration your worktree could never see, and that later run is unchanged by this one.
+
 ## For slices with no code
 
 The same discipline applies to a document, a rendered asset, or an infrastructure change. Before producing it, name what would show it is wrong: the check that fails now and passes when it is done. For infrastructure that means an observation of running state, never an exit code.
