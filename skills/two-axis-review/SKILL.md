@@ -43,9 +43,9 @@ The glossary is the repository stating what it calls things, so it gives this ax
 
 **A name that contradicts the glossary.** Cite the term. Blocking when other code depends on the name: a type, an export, a column, anything public. Worth doing when it is local to one file. This is Mysterious Name with the rule already written down.
 
-**A name for something the glossary does not hold.** Not a defect, and grade nothing. The interview settles the words it anticipated; the build discovers the things nobody thought to name. Report it as a vocabulary gap for the Architect to settle.
+**A name for something the glossary does not hold.** Not a defect, and grade nothing; the smell baseline below does not reopen it. The interview settles the words it anticipated; the build discovers the things nobody thought to name. Report it as a vocabulary gap for the Architect to settle.
 
-Where none of the above documents the thing in front of you, fall back on a smell baseline: Fowler's smells, plus Capstan's own.
+Where the repository documents nothing about the thing in front of you, fall back on a smell baseline: Fowler's smells, plus Capstan's own.
 
 Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest, **Restated Comment**.
 
