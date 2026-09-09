@@ -45,7 +45,7 @@ The glossary is the repository stating what it calls things, so it gives this ax
 
 **A name for something the glossary does not hold.** Not a defect, and grade nothing. The interview settles the words it anticipated; the build discovers the things nobody thought to name. Report it as a vocabulary gap for the Architect to settle.
 
-Where the repository documents nothing, fall back on a smell baseline: Fowler's smells, plus Capstan's own.
+Where none of the above documents the thing in front of you, fall back on a smell baseline: Fowler's smells, plus Capstan's own.
 
 Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest, **Restated Comment**.
 
