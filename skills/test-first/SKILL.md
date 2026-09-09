@@ -55,7 +55,7 @@ Typecheck often. Run the single test file you are working in, repeatedly. Run th
 
 Running everything after every change is slow enough that people stop doing it, and that is worse than the discipline it was protecting.
 
-If this repository has declared checks, find them the way `verify`'s **Find the checks the repository already declares** section does — the four sources it names. Its integration rule and its baseline step are the Architect's, not yours. A check, or the suite, that comes back red for a reason predating your slice is a line in your report, not a thing to fix — noted and not acted on, the same as anything else you find that belongs to a different slice. Run them inside this loop, before you return, the same as the suite above.
+If this repository has declared checks, find them the way `verify`'s **Find the checks the repository already declares** section does — the four sources it names. Its integration rule and its baseline step are the Architect's, not yours. You still have the commit your branch started from, though: run a check there before you call its red pre-existing. A check that comes back red for a reason predating your slice is a line in your report, not a thing to fix — noted and not acted on, the same as anything else you find that belongs to a different slice. Run them inside this loop, before you return, the same as the suite above.
 
 You run declared checks against your own slice, in your own worktree, before anyone else sees it. `verify` runs them again once every slice has merged, against an integration your worktree could never see, and that later run is unchanged by this one.
 
