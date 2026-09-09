@@ -8,6 +8,8 @@ permissionMode: acceptEdits
 skills:
   - test-first
   - diagnosing-bugs
+  - codebase-design
+  - two-axis-review
 color: green
 ---
 
@@ -77,7 +79,7 @@ Stop only for consequence, never for ambiguity.
 - Every assumption you made, each one a single line.
 - Any name you had to invent because the glossary held no word for the thing.
 - Anything you found that belongs to a different slice, noted and not acted on.
-- Whether the tests pass and the typecheck is clean.
+- What the declared checks showed.
 
 Do not review your own work and do not summarise its quality. A separate Reviewer reads your diff without your reasoning, and your assessment of your own output is worth nothing to it.
 
