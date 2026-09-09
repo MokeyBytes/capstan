@@ -50,6 +50,8 @@ The words this repository uses, defined once. This describes Capstan itself; it 
 | Frontier | Every decision whose prerequisites are already settled: the questions askable now. |
 | Claim | `<working copy>/.capstan/effort/CLAIM.md`. Marks an effort as held, so a second Architect stops rather than starting. |
 | Verify | Running the checks the repository declares against the merged result, and reporting what they showed. Never an exit code alone. |
+| Declared check | A check the repository itself declares, in a CI workflow, a task runner, a commit hook or a contributing guide. `verify` owns the order they are discovered in. A command an agent invents or runs ad hoc, a grep included, is not one. |
+| Vendored | A skill taken from an upstream project under its own licence, carrying a `CREDIT.md` that states every local change and how to refresh it. A vendored file is not edited to add Capstan's own content; that content goes in a Capstan-authored file instead. |
 | Axis | One of the two independent review questions: Standards (built right) and Spec (right thing). Never blended. |
 | Fixed point | The commit, branch or tag a review diffs against. Supplied by whoever dispatches, never guessed. |
 | `<working copy>` | The repository an effort's work lives in, established by absolute path at the Precondition and never assumed to be the session's own directory. The prefix that qualifies a scratch path, so an agent resolves it against that repository rather than wherever its session sits. |
