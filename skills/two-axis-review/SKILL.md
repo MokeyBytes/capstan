@@ -51,6 +51,8 @@ Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession
 
 Each is a labelled heuristic, never a hard violation. Say "possible Feature Envy" and state what it is followed by how to fix it, so the finding arrives with a move attached rather than a complaint.
 
+One heuristic stands beside the twelve, Capstan's own: **Restated Comment**, a comment whose content is already visible in the line it sits next to. Say "possible Restated Comment" and point at the fix: keep a comment where it carries something the code cannot say for itself — the reason behind a choice, the constraint it satisfies, the case that looks wrong until you know why it isn't — and drop the rest, letting the line speak on its own.
+
 Skip anything a linter or typechecker already enforces. Reporting what CI would have caught wastes the one pass someone will actually read.
 
 Where the artifact is prose rather than code, name a writing standard rather than assume one. The condition that picks between them is who reads the artifact, not who wrote it.
