@@ -4,7 +4,7 @@ capstan_type: decision-record
 
 # 0002. Vendor the walkthrough library rather than write one
 
-**Status**: accepted
+**Status**: superseded by 0005
 **Date**: 2026-08-21
 
 ## Context

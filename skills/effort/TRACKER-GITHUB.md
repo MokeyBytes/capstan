@@ -131,20 +131,26 @@ A teardown comment is never a conforming comment: that term names only a match a
 
 ## Reading the tracker back
 
-`gh project item-list <project-number> --owner <owner> --format json` returns Effort, Slice and Status together, in one call — the milestone, the issue title, and the custom field's current value are all columns on the same item:
+Read the board through the helper, never through a bare `gh project item-list`:
 
 ```
-gh project item-list <project-number> --owner <owner> --format json \
-  -q '.items[] | {slice: .title, status: ."capstan Status", effort: .milestone.title}'
+<bin>/capstan-tracker read --owner <owner> --repo <repo> --project <project-number> [--with-commits]
 ```
 
-`--format json` is not optional for this read. Bare `gh project item-list <project-number> --owner <owner>`, without it, returns a fixed table of TYPE, TITLE, NUMBER, REPOSITORY, ID — neither the milestone nor the custom field is on it.
+`<bin>` is the `bin/` folder beside `SKILL.md`. It prints one tab-separated row per slice — `effort`, `slice`, `status`, `commit`, `issue`, `url`, `note` — under a header line, a summary on stderr, and it exits 0 only for a read it can prove complete. `gh project item-list` returns 30 items unless told otherwise and paginates only up to the limit it is given, so the helper reads with an explicit limit, compares what came back against the `totalCount` the same response carries, and reads again with that count when the two differ. A row belongs to this tracker only when it is an issue in `<owner>/<repo>` carrying a `Capstan Status`; everything else on the board is counted in the summary and left out, per 730.
 
-In that JSON the field is keyed `capstan Status`, not `Capstan Status`: GitHub lowercases only the first word of a custom field's name when it renders the field into JSON, leaving the option values (`planned`, `building`, `merged`, `dropped`) untouched. Query `."capstan Status"`, or the read comes back empty against a field that is actually set.
+| Exit | Means |
+|---|---|
+| 0 | Complete. Zero rows with exit 0 is a genuine empty board, told apart from the two below. |
+| 1 | Unreachable: a `gh` call exited non-zero, the per-issue comment reads included. No rows are printed. |
+| 2 | Incomplete: the board reports more items than three reads returned. No rows are printed. |
+| 3 | A row that cannot be read: a status outside the four, a missing milestone, or, with `--with-commits`, a `merged` row whose issue carries zero or more than one conforming comment. No rows are printed. |
 
-Reconstructing three of the tracker's four columns this way costs exactly what reading `tracker.md` costs: one read.
+`--with-commits` reads every `merged` row's issue comments, all pages, and fills `commit` from its one conforming comment; other comments on that issue are counted into `note` as `other-comments=<n>`, which is what "reported alongside the commit" above means in practice. A read of the full tracker is therefore 1+N calls against the board, N the number of merged slices, not the one file-read `tracker.md` gives an agent that already has it open. This surface is worth it for the visibility it gives people without a clone; it is not a drop-in replacement for the offline, single-read table underneath it.
 
-The merge commit is the exception. It lives in an issue comment, not on the project item, so getting it back costs one further call per slice — `gh issue view` or an equivalent, run once for every issue whose commit you need. A read of the full tracker is 1+N calls against the board, where N is the number of slices, not the one file-read `tracker.md` gives an agent that already has it open. This surface is worth it for the visibility it gives people without a clone; it is not a drop-in replacement for the offline, single-read table underneath it.
+Underneath, the helper runs `gh project item-list <project-number> --owner <owner> --format json --limit <n>` with a `--jq` projection. `--format json` is what puts the milestone and the custom field on the item at all, and in that JSON the field is keyed `capstan Status`, not `Capstan Status`: GitHub lowercases only the first word of a custom field's name when it renders it, leaving the option values untouched. Querying the display name exits zero and returns nothing against a field that is set, which is the trap the helper exists to keep out of an agent's hands.
+
+`diff` compares the board against a `tracker.md`, keyed by effort **and** slice, never slice alone: two efforts can each have a `docs`. It exits 0 only when both hold the same keys with the same status, and the same commit on `merged` rows, and otherwise prints every difference — `status-changed`, `commit-changed`, `board-only`, `file-only` — and exits 4. `skills/setup/SKILL.md` runs it before either migration leg deletes or tears anything down.
 
 ## Why never the built-in `Status`
 
@@ -158,10 +164,10 @@ There is no repair path either. `gh` has no `project field-edit`, so the built-i
 
 GitHub unreachable stops the run and says so. No retry, no backoff, no bounded wait. A rate limit and an expired token are the same case: the run ends rather than slows down. This is the same rule an unreachable document home already gets — a missing source of truth is not ambiguity to work around, it is a reason to stop.
 
-The discriminator is the call's exit status, never its message, and it reaches every read against this surface — a per-issue read run once for every row in a sweep among them, easy to undercount since it fires once per row rather than once per read.
+The discriminator is the exit status, never the message, and it reaches every read against this surface. Through the helper that is one code to read: exit 1 is unreachable, whichever of its calls failed, the per-issue comment reads included, which fire once per merged row and are easy to undercount by hand. Exit 2, incomplete, stops the run the same way: a partial read is neither empty nor unreachable, and treating it as either drops rows while reporting success, per 828.
 
-A nonzero exit is unreachable, with one exception: `skills/setup/SKILL.md`'s scope-probe branch already names the missing-`project`-scope failure and walks the operator through the grant rather than stopping here. Every other nonzero exit, at that probe and everywhere else on this surface, is unreachable.
+A nonzero exit from a write, or from any `gh` call made outside the helper, is unreachable, with one exception: `skills/setup/SKILL.md`'s scope-probe branch already names the missing-`project`-scope failure and walks the operator through the grant rather than stopping here. Every other nonzero exit, at that probe and everywhere else on this surface, is unreachable.
 
-A zero exit is a genuine empty result, not a failure, only when the query behind it is the one this file declares above, `."capstan Status"`. Querying `."Capstan Status"` instead, the display name's own capitalisation, also exits zero and also returns nothing against a field that is set — the mis-keyed trap the read-back section above already warns of, not an empty board. "Returns nothing" means no rows on that declared query, before the reverse leg's own further narrowing to rows whose value came back set.
+A zero exit from the helper is a genuine empty result, not a failure: it has already proved the read complete and queried the field under the key the JSON actually carries. "Returns nothing" means no rows from it, which is already narrowed to rows whose value came back set.
 
 Exhausting the rate limit made `gh project item-list` print `unknown owner type`. It looked like a different failure, and was in fact this one, the unreachable case.

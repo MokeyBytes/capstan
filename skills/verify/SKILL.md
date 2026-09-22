@@ -26,13 +26,21 @@ Take the CI definition when there is one. A repository whose CI runs typecheck, 
 
 A check that was failing before this effort started is not this effort's finding, and reporting it as one sends a Builder after somebody else's bug.
 
-`CLAIM.md` records `head`, the commit the effort began from. That is the baseline. You do not need it until something fails: when a check goes red, run that one command again at `head` in a throwaway worktree before you report it.
+The baseline is `base_commit` in the claim: the commit the effort started from, written once when the claim was taken and never moved since. Read it through the helper rather than the file:
 
 ```bash
-git -C <repo> worktree add -q <tmp>/verify-baseline <head-from-CLAIM>
+<bin>/capstan-claim base <repo>
 ```
 
-Red at `head` too means pre-existing. Say so, name it, and do not attribute it to a slice. Remove the worktree when you are done with it.
+`<bin>` is the `bin/` folder beside the `effort` skill's `SKILL.md`. You do not need the baseline until something fails: when a check goes red, run that one command again at that commit in a throwaway worktree before you report it.
+
+```bash
+git -C <repo> worktree add -q <tmp>/verify-baseline $(<bin>/capstan-claim base <repo>)
+```
+
+Red at the baseline too means pre-existing. Say so, name it, and do not attribute it to a slice. Remove the worktree when you are done with it.
+
+Exit 6 means the baseline is unknown: the claim predates the field, or was adopted from one that did. Do not stand `last_observed_head` or any later commit in for it. Those moved at every gate, and a check red there may have gone red inside this effort. Report the verification as degraded on that point, name the red check, and say it could not be classified as pre-existing from the claim. A Builder's own pre-slice check, per `test-first`, may still say what its branch's base looked like; cite that where it exists.
 
 ## Run them against the integration
 
@@ -45,6 +53,16 @@ Keep the output out of your context. A test suite prints thousands of lines and 
 ```
 
 Then read the tail, and grep the log for the failures. Read the whole log only when the tail does not say what broke.
+
+## Record the commit that passed
+
+When every check is green against the integration, write the commit into the claim before any brief claims anything:
+
+```bash
+<bin>/capstan-claim verified <repo> --owner <id> --commit HEAD
+```
+
+`<id>` is the owner id the `effort` skill holds. That commit is the one the gate-3 brief names, and the one `PHASE-4-DELIVER.md` checks `HEAD` against before anything ships. A change to the repository after it, a version bump included, is a change this run did not verify, which is why phase 3 settles the version before this step and why a later change comes back here rather than shipping on the strength of an earlier green.
 
 ## Report what you observed
 
@@ -68,4 +86,4 @@ Silence reads as passing. That is the failure this rule exists for.
 
 The same question, asked of a different artifact: what would show this is wrong, and did you look? A document gets read against the spec it was written from. A configuration change gets applied in check mode and the running state observed, never the exit status. A migration gets run against a copy.
 
-**Done when** every check named in the first step has been run against the integration, each result is stated as an observation rather than an exit code, and anything red is either traced to a slice or shown to have been red at `head`.
+**Done when** every check named in the first step has been run against the integration, each result is stated as an observation rather than an exit code, anything red is traced to a slice, shown to have been red at `base_commit`, or reported as unclassifiable because the baseline is unknown, and a green integration has its commit recorded in the claim.

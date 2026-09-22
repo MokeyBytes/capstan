@@ -1,0 +1,1632 @@
+{
+  "items": [
+    {
+      "id": "PVTI_1",
+      "title": "slice-01",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-01",
+        "number": 1,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/1",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_2",
+      "title": "slice-02",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-02",
+        "number": 2,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/2",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_3",
+      "title": "slice-03",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-03",
+        "number": 3,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/3",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_4",
+      "title": "slice-04",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-04",
+        "number": 4,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/4",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_5",
+      "title": "docs",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "docs",
+        "number": 5,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/5",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_6",
+      "title": "slice-06",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-06",
+        "number": 6,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/6",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_7",
+      "title": "slice-07",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-07",
+        "number": 7,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/7",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_8",
+      "title": "slice-08",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-08",
+        "number": 8,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/8",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_9",
+      "title": "slice-09",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-09",
+        "number": 9,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/9",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_10",
+      "title": "slice-10",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-10",
+        "number": 10,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/10",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_11",
+      "title": "slice-11",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-11",
+        "number": 11,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/11",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_12",
+      "title": "slice-12",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-12",
+        "number": 12,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/12",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_13",
+      "title": "slice-13",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-13",
+        "number": 13,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/13",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_14",
+      "title": "slice-14",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-14",
+        "number": 14,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/14",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_15",
+      "title": "slice-15",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-15",
+        "number": 15,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/15",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_16",
+      "title": "slice-16",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-16",
+        "number": 16,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/16",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_17",
+      "title": "slice-17",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-17",
+        "number": 17,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/17",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_18",
+      "title": "slice-18",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-18",
+        "number": 18,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/18",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_19",
+      "title": "slice-19",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-19",
+        "number": 19,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/19",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_20",
+      "title": "slice-20",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-20",
+        "number": 20,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/20",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_21",
+      "title": "slice-21",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-21",
+        "number": 21,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/21",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_22",
+      "title": "docs",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "docs",
+        "number": 22,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/22",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_23",
+      "title": "slice-23",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-23",
+        "number": 23,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/23",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_24",
+      "title": "slice-24",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-24",
+        "number": 24,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/24",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_25",
+      "title": "slice-25",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-25",
+        "number": 25,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/25",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_26",
+      "title": "slice-26",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-26",
+        "number": 26,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/26",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_27",
+      "title": "slice-27",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-27",
+        "number": 27,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/27",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_28",
+      "title": "slice-28",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-28",
+        "number": 28,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/28",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_29",
+      "title": "slice-29",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-29",
+        "number": 29,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/29",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_30",
+      "title": "slice-30",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-30",
+        "number": 30,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/30",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_31",
+      "title": "slice-31",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-31",
+        "number": 31,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/31",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_32",
+      "title": "slice-32",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-32",
+        "number": 32,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/32",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_33",
+      "title": "slice-33",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-33",
+        "number": 33,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/33",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_34",
+      "title": "slice-34",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-34",
+        "number": 34,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/34",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_35",
+      "title": "slice-35",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-35",
+        "number": 35,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/35",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_36",
+      "title": "slice-36",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-36",
+        "number": 36,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/36",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_37",
+      "title": "slice-37",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-37",
+        "number": 37,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/37",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_38",
+      "title": "slice-38",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-38",
+        "number": 38,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/38",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_39",
+      "title": "slice-39",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-39",
+        "number": 39,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/39",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_40",
+      "title": "web ui",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "web ui",
+        "number": 40,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/40",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_41",
+      "title": "slice-41",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-41",
+        "number": 41,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/41",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_42",
+      "title": "slice-42",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-42",
+        "number": 42,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/42",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_43",
+      "title": "slice-43",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-43",
+        "number": 43,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/43",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_44",
+      "title": "slice-44",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-44",
+        "number": 44,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/44",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_45",
+      "title": "slice-45",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-45",
+        "number": 45,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/45",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_46",
+      "title": "slice-46",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-46",
+        "number": 46,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/46",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_47",
+      "title": "slice-47",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-47",
+        "number": 47,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/47",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_48",
+      "title": "slice-48",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-48",
+        "number": 48,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/48",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_49",
+      "title": "slice-49",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-49",
+        "number": 49,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/49",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_50",
+      "title": "slice-50",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-50",
+        "number": 50,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/50",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_51",
+      "title": "slice-51",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-51",
+        "number": 51,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/51",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_52",
+      "title": "slice-52",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-52",
+        "number": 52,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/52",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_53",
+      "title": "slice-53",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-53",
+        "number": 53,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/53",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_54",
+      "title": "slice-54",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-54",
+        "number": 54,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/54",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_55",
+      "title": "slice-55",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-55",
+        "number": 55,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/55",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_56",
+      "title": "slice-56",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-56",
+        "number": 56,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/56",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_57",
+      "title": "slice-57",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-57",
+        "number": 57,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/57",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_58",
+      "title": "slice-58",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-58",
+        "number": 58,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/58",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_59",
+      "title": "slice-59",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-59",
+        "number": 59,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/59",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_60",
+      "title": "slice-60",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-60",
+        "number": 60,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/60",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_61",
+      "title": "slice-61",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-61",
+        "number": 61,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/61",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_62",
+      "title": "slice-62",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-62",
+        "number": 62,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/62",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_63",
+      "title": "slice-63",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-63",
+        "number": 63,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/63",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_64",
+      "title": "slice-64",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-64",
+        "number": 64,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/64",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_65",
+      "title": "slice-65",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-65",
+        "number": 65,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/65",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_66",
+      "title": "slice-66",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-66",
+        "number": 66,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/66",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_67",
+      "title": "slice-67",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-67",
+        "number": 67,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/67",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_68",
+      "title": "slice-68",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-68",
+        "number": 68,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/68",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "dropped",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_69",
+      "title": "slice-69",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-69",
+        "number": 69,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/69",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_70",
+      "title": "slice-70",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-70",
+        "number": 70,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/70",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-d",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_71",
+      "title": "pull-request-71",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "PullRequest",
+        "title": "pull-request-71",
+        "number": 71,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/pull/71",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "merged",
+      "status": "Done"
+    },
+    {
+      "id": "PVTI_72",
+      "title": "scratch note",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "DraftIssue",
+        "title": "scratch note",
+        "body": "a note on the board"
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_73",
+      "title": "elsewhere",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "elsewhere",
+        "number": 73,
+        "repository": "other/repo",
+        "url": "https://github.com/other/repo/issues/73",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/other/repo",
+      "milestone": {
+        "title": "effort-b",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_74",
+      "title": "unstatused",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "unstatused",
+        "number": 74,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/74",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-c",
+        "description": "",
+        "dueOn": null
+      },
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_75",
+      "title": "redacted",
+      "assignees": [],
+      "labels": [],
+      "content": null,
+      "capstan Status": "planned",
+      "status": "Todo"
+    }
+  ],
+  "totalCount": 75
+}

@@ -2,7 +2,7 @@
 
 This document holds the reasoning behind Capstan's shape, and it is not needed to install or use the plugin.
 
-No operating layer: no schemas, no hooks, no scheduler, nothing that has to be maintained for the workflow to keep working. That is deliberate: anything that needs code to stay alive is something you will eventually maintain or abandon, and prose survives a model change in a way a validator does not. `walkthrough` looks like an exception. It vendors 204 lines of bash. The script itself is generated for one run, handed to the operator, and thrown away, and the library it comes from is vendored and never edited. Nothing here needs upkeep to keep working, including that one.
+No operating layer: no schemas, no hooks, no scheduler, nothing that has to run for the workflow to keep working. That is deliberate: anything that needs code to stay alive is something you will eventually maintain or abandon, and prose survives a model change in a way a validator does not. Two things look like exceptions. `walkthrough` builds a throwaway script for one run from a bash library it carries, forked and tested rather than vendored untouched since [0005](.capstan/decisions/0005-fork-the-walkthrough-library.md). And three small helpers under `skills/effort/bin/` take the effort's lock, delete its scratch, and read a tracker board, per [0004](.capstan/decisions/0004-admit-a-thin-executable-layer.md) and the [last section here](#why-a-thin-executable-layer-exists). None of them runs unless an agent calls it, and nothing polls, waits, or fires on its own.
 
 ## The crew
 
@@ -134,3 +134,11 @@ That field resolves against the **session's** working directory rather than the 
 So the Architect runs `git -C <repo> worktree add ...` itself, hands each Builder an absolute path, and removes the worktree after the merge. Nothing ever changes directory, and the flow works from a session rooted anywhere, including somewhere with no repository at all.
 
 The related trap: `.capstan/effort/` is gitignored, so an effort's spec, plan, and research do not exist inside any worktree. Builders get absolute paths into the main working copy for those. A Builder that cannot find its brief will invent one.
+
+## Why a thin executable layer exists
+
+Prose holds intent well and sequence badly. The decision log has a run of rules that were read correctly and still failed, because the failure was in the order of operations rather than the words: a claim checked and then written, so two sessions could both pass the check; a tracker read that returned thirty rows and exited zero, so a partial board looked complete; a delete written as `effort*`, which reached `effort-archive`; one claim field standing for both the baseline a check is classified against and the checkpoint a run resumes from, so the baseline moved at every gate; a version committed after the verification meant to cover it; a fan-out with no ceiling and a fix loop counted in free text. Sharpening the wording had been tried on more than one of them.
+
+So a bounded amount of code is admitted, under a rule for what qualifies. A helper replaces a rule that has already failed on the record, and does one deterministic thing when a skill tells it to: take a lock with `mkdir`, count a dispatch against a limit, read a board until the count matches, delete a path it has verified. It never decides anything. The skill still says when to call it and what the exit code means, and the judgement about what to do next stays in prose. Three exist, they share one folder that travels with the `effort` skill under either install, and `tests/` plus CI are what keep each one and its instruction in step.
+
+What stays out is the same as before: no scheduler, because a Builder returning is what frees a place and the run still ends at the gate; no hooks, because nothing should fire without an agent asking; no schemas, because a spec with a validator is a spec someone will stop editing. The cost is real and recorded in 0004: bash 3.2 to keep working on, `gh` to track, and a README sentence that had to be qualified.

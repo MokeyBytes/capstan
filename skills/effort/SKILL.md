@@ -127,27 +127,69 @@ Tracking is always on; unset is the only branch where that means `tracker.md`. N
 
 Unset, a status change rides the commit that phase already makes, rather than generating one of its own — at a configured document home, where Capstan never runs git, the operator's own commit carries it instead, per `## Document home` above.
 
+## Limits
+
+Two more keys, read from the same two files as the three above, bare lines, checked the same way: both files carrying one with different values stops the dispatch and says so. Each has a default, so unset is a complete answer.
+
+| Key | Default | Bounds |
+|---|---|---|
+| `capstan-max-builders` | 3 | Builders in flight at once inside one effort |
+| `capstan-max-fix-dispatches` | 5 | Fix dispatches on one slice, and on the note, across every run of the effort |
+
+`capstan-claim dispatch` enforces both from the counts held in `CLAIM.md`, so they survive a run boundary. Reaching one refuses the dispatch, leaves every count as it was, and prints the state; `PHASE-3-BUILD.md` and `PHASE-4-DELIVER.md` say what the run does then. The defaults are deliberately low: three Builders is as many returns as one Architect reads without one of them waiting unreviewed, and five fix rounds on one slice is past the point where the design question in `PHASE-3-BUILD.md` has fired three times.
+
 ## Before you start
 
-**Check for a claim.** Read `.capstan/effort/CLAIM.md` in the working copy. If it exists, another Architect already holds this effort. Do not start. Report what it says (when it started, what phase it reached, when it was last touched) and ask whether to take it over or leave it alone. Only the operator decides that.
+**Take the claim.** The helpers this skill runs live in `bin/` beside this file. Resolve that folder to an absolute path from wherever this skill was loaded, and call it `<bin>` below; every phase file uses the same name. Nothing about the claim is checked and then written by hand: one command takes the lock, and it either succeeds for you or says who holds it.
 
-Write a claim:
+```bash
+<bin>/capstan-claim acquire <working copy> --effort <slug>
+```
+
+Success prints `fresh` and an `owner:` line. **Keep that owner id for the rest of the effort.** Every later write to the claim names it, and a run that resumes presents it again, so carry it into each gate brief for the next run to read back. Call it `<id>` below.
+
+| Exit | Means | Do |
+|---|---|---|
+| 0 | You hold the effort: `fresh` is a new claim, `resumed` is the same owner continuing. | Continue. |
+| 2 | Another owner holds it. The record is printed: who, since when, what phase, what is outstanding. | Do not start. Report it and ask whether to resume it, take it over, or leave it alone. Only the operator decides that. Resuming as the earlier run is `acquire --owner <that id>`; taking it over is `takeover --owner <new id> --from <the holder, exactly>`. Age never authorises either: a lock a week old is still held. |
+| 2, naming an older claim without a lock | A claim written before the lock existed. | `acquire --adopt`. Its `base_commit` stays unknown, which `verify` reports as degraded rather than invents. Its fix-dispatch counts were text in `next`; read them there and transcribe each live slice's, and the note's, with `reset --slice <slice> --count <n>` before its first fix dispatch. `dispatch` refuses until that is done, so a count carried as text is never read as zero. |
+| 3 | Someone is taking the lock this instant. | Run it once more. |
+
+The lock is `<working copy>/.capstan/effort/.claim.lock/`, taken with `mkdir`, which is what stops two sessions holding one effort. The record beside it, `CLAIM.md`, is written by the same helper and read by people and by the run that resumes:
 
 ```markdown
 # CLAIM
 effort: <slug>
+owner: <id>
 started: <ISO timestamp>
 phase: concept
-head: <the commit the effort starts from>
-next: <what the run after this one picks up, and, once plan.md has cut slices, each live slice's fix-dispatch count, and, once phase 4 has begun, the note's fix-dispatch count>
+base_commit: <the commit the effort started from. written once, never moved>
+last_observed_head: <the commit the last run checked the repository against. moved at every gate>
+verified_commit: <the commit verify last passed against, or blank>
+verified_at: <ISO timestamp>
 last-touched: <ISO timestamp>
+builders_in_flight: <slices with a Builder out right now>
+fix_dispatches: <slice>=<count>, ..., note=<count>
+takeovers: <who took it from whom, and when>
+
+## Next
+
+<what the run after this one picks up>
 ```
 
-Update `phase`, `head`, `next` and `last-touched` at every gate. You delete it with the rest of `<working copy>/.capstan/effort/` at delivery.
+`base_commit` and `last_observed_head` are two fields because they answer two questions. `verify` asks what was already red before the effort touched anything, and only the first commit answers that. Re-reading the world asks what moved since the last run, and only the latest checkpoint answers that. One field doing both jobs moved the baseline at every gate.
 
-`next` is written for the Architect who resumes, not for the operator. `phase` says where the effort got to; `next` says what is outstanding inside it, which matters most in phase 3: git shows the same branch and worktree for a slice under review and for one nobody has opened, and says nothing about which findings were dismissed or how many fix dispatches a slice has already had. Phase 3 spans runs, and a fix-dispatch count held only in one run's context window means the question `PHASE-3-BUILD.md` asks at the third dispatch only fires when a single Architect happens to make three dispatches in one sitting. Write what the next run picks up, name slices as `plan.md` names them, and carry each live slice's fix-dispatch count. Once phase 4 has begun, `next` carries the note's fix-dispatch count alongside each live slice's. `next` stops being kept to a line: carrying the counts is worth the width.
+Write the record through the helper, never by hand:
 
-The claim is the only thing standing between two sessions and the same files. The three-effort ceiling counts efforts, not sessions, so without a claim two Architects will happily run the same work, fire duplicate Scouts at the same questions, and write over each other.
+```bash
+<bin>/capstan-claim checkpoint <working copy> --owner <id> --phase <phase> --next "<text>"
+```
+
+`--next-file <path>` carries a `next` too long for a line. `checkpoint` moves `last_observed_head` to the current `HEAD` and refuses `--base`. The counts and the in-flight list are written by `dispatch` and `return`, in `PHASE-3-BUILD.md`, never by `checkpoint`. You delete the record and the lock with the rest of `<working copy>/.capstan/effort/` at delivery, through `capstan-scratch-clean`.
+
+`next` is written for the Architect who resumes, not for the operator. `phase` says where the effort got to; `next` says what is outstanding inside it, which matters most in phase 3: git shows the same branch and worktree for a slice under review and for one nobody has opened, and says nothing about which findings were dismissed. Name slices as `plan.md` names them.
+
+The lock is the only thing standing between two sessions and the same files. The three-effort ceiling counts efforts, not sessions, so without it two Architects will happily run the same work, fire duplicate Scouts at the same questions, and write over each other.
 
 Then check how many efforts are in flight. **Three is the ceiling.** Three gates each against one reader means nine briefs a cycle, which is the point where they stop being read and start being rubber-stamped. If three are already open, say so and ask which one to close first rather than starting a fourth.
 
@@ -157,14 +199,16 @@ Then read what already exists: `CONTEXT.md`, `decisions.md`, and any prior `deci
 
 A run **ends** at each gate, and time passes before the next one starts. Hours, sometimes. The repository moves, other sessions run, and the state you reasoned about is no longer the state in front of you.
 
-So the first act of phases 2, 3 and 4 is not the work. It is reading the claim's `next` line, which is the last run telling you where it stopped, and then checking what changed underneath it:
+So the first act of phases 2, 3 and 4 is not the work. It is resuming the claim with the owner id the last run recorded, reading its `next`, which is the last run telling you where it stopped, and then checking what changed underneath it:
 
 ```bash
-git -C <working copy> log --oneline <head-recorded-in-CLAIM>..HEAD
+<bin>/capstan-claim acquire <working copy> --owner <id>
+<bin>/capstan-claim status <working copy>
+git -C <working copy> log --oneline $(<bin>/capstan-claim head <working copy>)..HEAD
 git -C <working copy> status --short
 ```
 
-If `HEAD` has moved since the claim recorded it, **stop and read what landed** before doing anything else. Someone may have built the thing you were about to build. Report what moved and who moved it rather than dispatching on top of it.
+`head` prints `last_observed_head`, the checkpoint, never `base_commit`. `acquire` also empties `builders_in_flight` and says which slices it held: no Builder outlives the run that spawned it, so any entry there is a dispatch whose return the last run never saw, and each of those slices is dispatched again from the frontier rather than assumed to be out. If `HEAD` has moved since the checkpoint, **stop and read what landed** before doing anything else. Someone may have built the thing you were about to build. Report what moved and who moved it rather than dispatching on top of it.
 
 Also re-list `<working copy>/.capstan/effort/scout/` and compare it against what you filed. Files you did not write mean another run touched this effort, and its findings may be better than yours.
 
@@ -192,7 +236,7 @@ Invoke the `decision-record` skill before this run's first row goes into `decisi
    - **Assumptions**: what was defaulted rather than settled, and the condition that would reopen it.
 
    A spike section appears only when the effort ran one.
-5. Update `<working copy>/.capstan/effort/CLAIM.md` (phase, head, next, last-touched), then post the gate-1 brief per the `brief` skill. End the run.
+5. Checkpoint the claim, `<bin>/capstan-claim checkpoint <working copy> --owner <id> --phase concept --next "<what phase 2 picks up>"`, then post the gate-1 brief per the `brief` skill, naming `<id>`. End the run.
 
 **Done when** `spec.md` carries Problem, What is being built, What it must do, Explicitly out of scope, Test seams and Assumptions. Every question raised in the interview is answered in it, written down there as an explicit assumption, or carried in `decisions.md` in the document home as `open`, `assumed` or `unformed`, and every Scout return is filed.
 
@@ -239,12 +283,16 @@ Prepare the change and run it in check mode. Present the diff at gate three. Aft
 
 <working copy>/
   .capstan/
-    effort/         gitignored. deleted at delivery. never resolved against the document home.
-      CLAIM.md      who holds this effort, what phase, from which commit, what is outstanding
+    effort/         gitignored. deleted at delivery by capstan-scratch-clean. never resolved against the document home.
+      .claim.lock/  who holds this effort. taken with mkdir: enforcement, not a record
+      CLAIM.md      the record: effort, owner, phase, base_commit, last_observed_head, verified_commit, counts, next
       spec.md
       plan.md
       scout/
       review/       <slice>-<n>.md for a Reviewer's return, verify-<n>.md for a verify return
+
+<this skill>/
+  bin/              capstan-claim, capstan-scratch-clean, capstan-tracker. `--help` on each lists its commands and exit codes.
 ```
 
 This skill ensures `.gitignore` carries `.capstan/effort/`, replacing an older scratch line with it where one is already there. `setup` ensures the same line on its first run. The scratch never enters git history, which is what keeps repositories from accumulating stale planning material. The entry stays bare: a `.gitignore` line is relative to the repository root.
@@ -268,4 +316,6 @@ Reviewers check Builders by construction, and you check Reviewers and Couriers b
 
 ## What you do not do
 
-No router agent, no scheduler, no cron sweep, no validation scripts, no JSON schemas, no hooks. If a piece of this workflow starts wanting code to keep it alive, that is the signal to simplify it instead. Every line of code in an operating layer is a line that eventually gets maintained or abandoned.
+No router agent, no scheduler, no cron sweep, no JSON schemas, no hooks. If a piece of this workflow starts wanting code to keep it alive, that is the signal to simplify it instead. Every line of code in an operating layer is a line that eventually gets maintained or abandoned.
+
+The three helpers in `bin/` are the bounded exception, per [0004](../../.capstan/decisions/0004-admit-a-thin-executable-layer.md). Each replaces a rule the decision log shows prose failing to hold, each does one deterministic thing, and each is tested in `tests/` and by CI. Judgement stays in these files; a helper only takes a lock, counts, enumerates, or deletes an exact path. A fourth earns its place the same way, with the failure it answers recorded in the log first.

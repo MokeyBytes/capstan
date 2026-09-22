@@ -1,0 +1,738 @@
+#!/usr/bin/env bash
+#
+# capstan-claim: atomic ownership of an effort, and the readable record beside it.
+#
+# Ownership is a lock directory, <working copy>/.capstan/effort/.claim.lock/,
+# taken with mkdir, which either succeeds for exactly one caller or fails for
+# everyone else. The record people and later runs read is CLAIM.md next to it.
+# The two are kept apart on purpose: the lock enforces, the record explains.
+#
+# Usage:
+#   capstan-claim acquire    <wc> [--owner ID] [--effort SLUG] [--adopt]
+#   capstan-claim status     <wc>
+#   capstan-claim release    <wc> --owner ID
+#   capstan-claim takeover   <wc> --owner NEW --from CURRENT
+#   capstan-claim checkpoint <wc> --owner ID [--phase P] [--head SHA] [--next TEXT | --next-file FILE]
+#   capstan-claim base       <wc>
+#   capstan-claim head       <wc>
+#   capstan-claim verified   <wc> --owner ID --commit SHA
+#   capstan-claim drift      <wc> [--document-home PATH]
+#   capstan-claim dispatch   <wc> --owner ID (build|fix|note) [--slice S] [--max-builders N] [--max-fix N]
+#   capstan-claim return     <wc> --owner ID --slice S
+#   capstan-claim reset      <wc> --owner ID --slice S [--count N]
+#
+# Exit codes:
+#   0  done
+#   2  ownership conflict: held by another owner, owner mismatch, or config disagreement
+#   3  another acquisition is initialising the lock right now; try again shortly
+#   4  no claim here
+#   5  a limit is reached; nothing changed, state printed
+#   6  degraded: the baseline, the verified commit, or an adopted claim's fix count is unknown
+#   7  <wc> is not the root of a git working copy
+#   8  drift: commits or uncommitted changes outside the document home since verification
+#   64 usage error
+#
+# Config keys read from <wc>/CLAUDE.md and <wc>/AGENTS.md, bare lines:
+#   capstan-max-builders: N        (default 3)  Builders in flight at once
+#   capstan-max-fix-dispatches: N  (default 5)  fix dispatches per slice, and on the note
+
+set -euo pipefail
+
+DEFAULT_MAX_BUILDERS=3
+DEFAULT_MAX_FIX=5
+INIT_GRACE_SECONDS=10
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 64
+}
+
+die() { # code message...
+  local code="$1"; shift
+  printf 'capstan-claim: %s\n' "$*" >&2
+  exit "$code"
+}
+
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+mtime_of() {
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
+}
+
+random_hex() {
+  od -An -N4 -tx1 /dev/urandom | tr -d ' \n'
+}
+
+is_sha() {
+  [[ "$1" =~ ^[0-9a-f]{7,40}$ ]]
+}
+
+is_slice_name() {
+  [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]]
+}
+
+# --- working copy -----------------------------------------------------------
+
+resolve_wc() {
+  local wc="$1" top
+  [[ -d "$wc" ]] || die 7 "not a directory: $wc"
+  top=$(git -C "$wc" rev-parse --show-toplevel 2>/dev/null) || die 7 "not a git working copy: $wc"
+  local want
+  want=$(cd "$wc" && pwd -P)
+  [[ "$(cd "$top" && pwd -P)" == "$want" ]] || die 7 "not the root of its working copy: $wc (root is $top)"
+  WC="$top"
+  SCRATCH="$WC/.capstan/effort"
+  LOCK="$SCRATCH/.claim.lock"
+  CLAIM="$SCRATCH/CLAIM.md"
+}
+
+# --- lock -------------------------------------------------------------------
+
+lock_holder() {
+  [[ -f "$LOCK/owner" ]] && cat "$LOCK/owner"
+}
+
+lock_note() { # append one history line
+  printf '%s %s\n' "$(now_iso)" "$*" >> "$LOCK/history"
+}
+
+write_lock_file() { # name content
+  printf '%s\n' "$2" > "$LOCK/.$1.tmp"
+  mv -f "$LOCK/.$1.tmp" "$LOCK/$1"
+}
+
+# lock_take OWNER: fresh|resumed on success. Exits 2 or 3 otherwise.
+lock_take() {
+  local owner="$1" attempt=0 waited=0 holder age
+  mkdir -p "$SCRATCH"
+  while :; do
+    attempt=$((attempt + 1))
+    if mkdir "$LOCK" 2>/dev/null; then
+      write_lock_file owner "$owner"
+      write_lock_file acquired "$(now_iso)"
+      lock_note "acquired by $owner"
+      printf 'fresh'
+      return 0
+    fi
+    if [[ ! -f "$LOCK/owner" ]]; then
+      age=$(( $(date +%s) - $(mtime_of "$LOCK") ))
+      if [[ $age -gt $INIT_GRACE_SECONDS ]]; then
+        [[ $attempt -lt 3 ]] || die 3 "a lock without an owner keeps reappearing at $LOCK; look at it before retrying"
+        printf 'capstan-claim: clearing a lock left without an owner %ss ago (interrupted initialisation)\n' "$age" >&2
+        rm -rf "$LOCK"
+        continue
+      fi
+      # A concurrent acquire is between mkdir and writing its owner file.
+      # Give it a moment so the answer here is held-by-whom rather than retry.
+      if [[ $waited -lt 20 ]]; then
+        waited=$((waited + 1))
+        sleep 0.1
+        continue
+      fi
+      die 3 "another acquisition is initialising the lock (${age}s old); try again"
+    fi
+    holder=$(lock_holder)
+    if [[ "$holder" == "$owner" ]]; then
+      lock_note "resumed by $owner"
+      printf 'resumed'
+      return 0
+    fi
+    printf 'capstan-claim: held by %s since %s\n' "$holder" "$(cat "$LOCK/acquired" 2>/dev/null || echo unknown)" >&2
+    [[ -f "$CLAIM" ]] && cat "$CLAIM" >&2
+    exit 2
+  done
+}
+
+require_owner() { # OWNER: the lock must exist and be held by OWNER
+  [[ -d "$LOCK" ]] || die 4 "no lock at $LOCK"
+  [[ -f "$LOCK/owner" ]] || die 3 "lock is still initialising"
+  local holder
+  holder=$(lock_holder)
+  [[ "$holder" == "$1" ]] || die 2 "held by $holder, not $1"
+}
+
+# --- CLAIM.md ---------------------------------------------------------------
+
+field() { # NAME: value from the header of CLAIM.md, empty when absent
+  [[ -f "$CLAIM" ]] || return 0
+  awk -v k="$1: " '
+    /^## Next/ { exit }
+    index($0, k) == 1 { print substr($0, length(k) + 1); exit }
+  ' "$CLAIM"
+}
+
+next_text() {
+  [[ -f "$CLAIM" ]] || return 0
+  awk 'found { print } /^## Next/ { found = 1 }' "$CLAIM" | sed '1{/^$/d;}'
+}
+
+load_claim() {
+  C_EFFORT=$(field effort)
+  C_OWNER=$(field owner)
+  C_STARTED=$(field started)
+  C_PHASE=$(field phase)
+  C_BASE=$(field base_commit)
+  C_HEAD=$(field last_observed_head)
+  C_VERIFIED=$(field verified_commit)
+  C_VERIFIED_AT=$(field verified_at)
+  C_TOUCHED=$(field last-touched)
+  C_BUILDERS=$(field builders_in_flight)
+  C_FIX=$(field fix_dispatches)
+  C_TAKEOVERS=$(field takeovers)
+  C_ADOPTED=$(field adopted)
+  C_NEXT=$(next_text)
+  # An older claim carried one field, head, doing two jobs. Read it as the
+  # checkpoint only; the baseline it once was cannot be recovered.
+  if [[ -z "$C_HEAD" && -n "$(field head)" ]]; then
+    C_HEAD=$(field head)
+    C_LEGACY=1
+  else
+    C_LEGACY=0
+  fi
+  [[ -z "$C_NEXT" && -n "$(field next)" ]] && C_NEXT=$(field next)
+  return 0
+}
+
+save_claim() {
+  local tmp="$CLAIM.tmp.$$"
+  {
+    printf '# CLAIM\n'
+    printf 'effort: %s\n' "$C_EFFORT"
+    printf 'owner: %s\n' "$C_OWNER"
+    printf 'started: %s\n' "$C_STARTED"
+    printf 'phase: %s\n' "$C_PHASE"
+    printf 'base_commit: %s\n' "$C_BASE"
+    printf 'last_observed_head: %s\n' "$C_HEAD"
+    printf 'verified_commit: %s\n' "$C_VERIFIED"
+    printf 'verified_at: %s\n' "$C_VERIFIED_AT"
+    printf 'last-touched: %s\n' "$C_TOUCHED"
+    printf 'builders_in_flight: %s\n' "$C_BUILDERS"
+    printf 'fix_dispatches: %s\n' "$C_FIX"
+    printf 'takeovers: %s\n' "$C_TAKEOVERS"
+    printf 'adopted: %s\n' "$C_ADOPTED"
+    printf '\n## Next\n\n%s\n' "$C_NEXT"
+  } > "$tmp"
+  mv -f "$tmp" "$CLAIM"
+}
+
+# --- counters held in CLAIM.md ---------------------------------------------
+
+fix_count() { # SLICE -> count (0 when absent)
+  local entry
+  for entry in ${C_FIX//,/ }; do
+    if [[ "${entry%%=*}" == "$1" ]]; then
+      printf '%s' "${entry#*=}"
+      return 0
+    fi
+  done
+  printf '0'
+}
+
+set_fix_count() { # SLICE COUNT
+  local out="" entry seen=0
+  for entry in ${C_FIX//,/ }; do
+    if [[ "${entry%%=*}" == "$1" ]]; then
+      entry="$1=$2"; seen=1
+    fi
+    out="${out:+$out, }$entry"
+  done
+  [[ $seen -eq 1 ]] || out="${out:+$out, }$1=$2"
+  C_FIX="$out"
+}
+
+in_flight() { # SLICE -> 0 when in flight
+  local entry
+  for entry in ${C_BUILDERS//,/ }; do
+    [[ "$entry" == "$1" ]] && return 0
+  done
+  return 1
+}
+
+in_flight_count() {
+  local n=0 entry
+  for entry in ${C_BUILDERS//,/ }; do n=$((n + 1)); done
+  printf '%s' "$n"
+}
+
+add_in_flight() {
+  C_BUILDERS="${C_BUILDERS:+$C_BUILDERS, }$1"
+}
+
+remove_in_flight() {
+  local out="" entry
+  for entry in ${C_BUILDERS//,/ }; do
+    [[ "$entry" == "$1" ]] && continue
+    out="${out:+$out, }$entry"
+  done
+  C_BUILDERS="$out"
+}
+
+# config_key NAME DEFAULT: one bare line across CLAUDE.md and AGENTS.md.
+config_key() {
+  local name="$1" default="$2" f v found="" file
+  for file in "$WC/CLAUDE.md" "$WC/AGENTS.md"; do
+    [[ -f "$file" ]] || continue
+    v=$(grep -E "^${name}:" "$file" 2>/dev/null | head -n1 | sed "s/^${name}:[[:space:]]*//" | tr -d '[:space:]' || true)
+    [[ -n "$v" ]] || continue
+    if [[ -n "$found" && "$found" != "$v" ]]; then
+      die 2 "$name differs between CLAUDE.md ($found) and AGENTS.md ($v); settle it before dispatching"
+    fi
+    found="$v"; f="$file"
+  done
+  if [[ -n "$found" ]]; then
+    [[ "$found" =~ ^[0-9]+$ && "$found" -ge 1 ]] || die 64 "$name in $f must be a positive integer, got: $found"
+    printf '%s' "$found"
+  else
+    printf '%s' "$default"
+  fi
+}
+
+print_state() {
+  printf 'effort: %s\nowner: %s\nphase: %s\nbase_commit: %s\nlast_observed_head: %s\nverified_commit: %s\nbuilders_in_flight: %s\nfix_dispatches: %s\n' \
+    "$C_EFFORT" "$C_OWNER" "$C_PHASE" "${C_BASE:-unknown}" "$C_HEAD" "${C_VERIFIED:-none}" "${C_BUILDERS:-none}" "${C_FIX:-none}"
+  if [[ -n "$C_ADOPTED" ]]; then
+    printf 'adopted: %s\n' "$C_ADOPTED"
+    printf 'adopted claim: fix-dispatch counts were carried as text in Next, not as a line this helper reads. Before the first fix dispatch on a slice, or on the note, transcribe its count with reset --slice <slice> --count <n> (0 when it has had none); dispatch refuses until then.\n'
+  fi
+}
+
+# adopted_count_known NAME: 0 when NAME has an entry in fix_dispatches, or the
+# claim was never adopted; 6 otherwise, so a legacy count is never read as zero.
+adopted_count_known() {
+  [[ -n "$C_ADOPTED" ]] || return 0
+  local entry
+  for entry in ${C_FIX//,/ }; do
+    [[ "${entry%%=*}" == "$1" ]] && return 0
+  done
+  printf 'capstan-claim: adopted claim: the fix-dispatch count for %s is unknown; read Next and set it with reset --slice %s --count <n> (0 when it has had none) before dispatching\n' "$1" "$1" >&2
+  print_state >&2
+  exit 6
+}
+
+# --- commands ---------------------------------------------------------------
+
+cmd_acquire() {
+  local owner="" effort="" adopt=0 how head
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --owner) owner="$2"; shift 2 ;;
+      --effort) effort="$2"; shift 2 ;;
+      --adopt) adopt=1; shift ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n "$owner" ]] || owner="$(id -un)@$(hostname -s 2>/dev/null || hostname):$(random_hex)"
+  load_claim
+  if [[ -f "$CLAIM" && -z "$C_OWNER" && $adopt -eq 0 && ! -d "$LOCK" ]]; then
+    printf 'capstan-claim: an older claim without a lock is here; pass --adopt to take it over, or ask the operator\n' >&2
+    cat "$CLAIM" >&2
+    exit 2
+  fi
+  how=$(lock_take "$owner")
+  head=$(git -C "$WC" rev-parse HEAD 2>/dev/null || true)
+  if [[ "$how" == "fresh" ]]; then
+    if [[ -f "$CLAIM" && -n "$C_OWNER" && "$C_OWNER" != "$owner" ]]; then
+      # A released or adopted claim: keep its record, change its owner.
+      C_TAKEOVERS="${C_TAKEOVERS:+$C_TAKEOVERS; }$C_OWNER -> $owner at $(now_iso) (after release)"
+      lock_note "record previously owned by $C_OWNER"
+    fi
+    if [[ -f "$CLAIM" ]]; then
+      [[ -n "$effort" && -n "$C_EFFORT" && "$effort" != "$C_EFFORT" ]] && die 2 "claim names effort $C_EFFORT, not $effort"
+      [[ -n "$C_EFFORT" ]] || C_EFFORT="$effort"
+      C_OWNER="$owner"
+      [[ -n "$C_STARTED" ]] || C_STARTED=$(now_iso)
+      [[ -n "$C_PHASE" ]] || C_PHASE=concept
+      [[ -n "$C_HEAD" ]] || C_HEAD="$head"
+      if [[ $C_LEGACY -eq 1 ]]; then
+        C_BASE=""
+        C_ADOPTED="$(now_iso); base_commit unknown; fix-dispatch counts not carried from Next"
+        lock_note "adopted an older claim; base_commit unknown; fix counts to transcribe"
+      fi
+    else
+      [[ -n "$effort" ]] || die 64 "--effort SLUG is required for a new claim"
+      C_EFFORT="$effort"; C_OWNER="$owner"; C_STARTED=$(now_iso); C_PHASE=concept
+      C_BASE="$head"; C_HEAD="$head"; C_VERIFIED=""; C_VERIFIED_AT=""
+      C_BUILDERS=""; C_FIX=""; C_TAKEOVERS=""; C_NEXT="Phase 1 not yet started."
+    fi
+  fi
+  # No Builder outlives the run that spawned it, so a run always begins with
+  # none in flight; an entry left here is a dispatch whose return no run saw.
+  if [[ -n "$C_BUILDERS" ]]; then
+    printf 'cleared builders_in_flight (%s): no Builder survives a run boundary, so each of these needs dispatching again\n' "$C_BUILDERS"
+    lock_note "cleared in-flight list at acquire: $C_BUILDERS"
+    C_BUILDERS=""
+  fi
+  if [[ -f "$CLAIM" || "$how" == "fresh" ]]; then
+    C_TOUCHED=$(now_iso)
+    save_claim
+  fi
+  printf '%s\nowner: %s\n' "$how" "$owner"
+  print_state
+}
+
+cmd_status() {
+  [[ $# -eq 0 ]] || usage
+  load_claim
+  if [[ ! -d "$LOCK" && ! -f "$CLAIM" ]]; then
+    printf 'no claim\n'
+    exit 4
+  fi
+  if [[ -d "$LOCK" ]]; then
+    if [[ -f "$LOCK/owner" ]]; then
+      local acquired age
+      acquired=$(cat "$LOCK/acquired" 2>/dev/null || echo unknown)
+      age=$(( $(date +%s) - $(mtime_of "$LOCK/owner") ))
+      printf 'lock: held by %s since %s (owner file %ss old)\n' "$(lock_holder)" "$acquired" "$age"
+    else
+      printf 'lock: initialising (no owner yet)\n'
+    fi
+  else
+    printf 'lock: none (claim record present without a lock: released, or older format)\n'
+  fi
+  [[ -f "$CLAIM" ]] || { printf 'record: none\n'; exit 0; }
+  [[ $C_LEGACY -eq 1 ]] && printf 'record: older format; head read as last_observed_head, base_commit unknown\n'
+  print_state
+  printf 'last-touched: %s\n' "$C_TOUCHED"
+  printf 'next:\n%s\n' "$C_NEXT"
+  [[ -f "$LOCK/history" ]] && { printf 'history:\n'; sed 's/^/  /' "$LOCK/history"; }
+  return 0
+}
+
+cmd_release() {
+  local owner=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in --owner) owner="$2"; shift 2 ;; *) usage ;; esac
+  done
+  [[ -n "$owner" ]] || usage
+  require_owner "$owner"
+  lock_note "released by $owner"
+  rm -rf "$LOCK"
+  printf 'released\n'
+}
+
+cmd_takeover() {
+  local owner="" from=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --owner) owner="$2"; shift 2 ;;
+      --from) from="$2"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n "$owner" && -n "$from" ]] || die 64 "takeover needs --owner NEW and --from CURRENT, naming the holder exactly"
+  [[ -d "$LOCK" ]] || die 4 "no lock to take over; use acquire"
+  [[ -f "$LOCK/owner" ]] || die 3 "lock is still initialising"
+  local holder
+  holder=$(lock_holder)
+  [[ "$holder" == "$from" ]] || die 2 "held by $holder, not $from; a takeover must name the current holder"
+  [[ "$holder" != "$owner" ]] || die 2 "$owner already holds the lock; use acquire to resume"
+  write_lock_file owner "$owner"
+  write_lock_file acquired "$(now_iso)"
+  lock_note "taken over from $from by $owner"
+  load_claim
+  if [[ -f "$CLAIM" ]]; then
+    C_OWNER="$owner"
+    C_TAKEOVERS="${C_TAKEOVERS:+$C_TAKEOVERS; }$from -> $owner at $(now_iso)"
+    C_TOUCHED=$(now_iso)
+    save_claim
+  fi
+  printf 'taken over from %s\n' "$from"
+  print_state
+}
+
+cmd_checkpoint() {
+  local owner="" phase="" head="" next="" next_file="" have_next=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --owner) owner="$2"; shift 2 ;;
+      --phase) phase="$2"; shift 2 ;;
+      --head) head="$2"; shift 2 ;;
+      --next) next="$2"; have_next=1; shift 2 ;;
+      --next-file) next_file="$2"; have_next=1; shift 2 ;;
+      --base|--base-commit) die 64 "base_commit is immutable; it is written once at acquire" ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n "$owner" ]] || usage
+  require_owner "$owner"
+  [[ -f "$CLAIM" ]] || die 4 "no CLAIM.md to checkpoint"
+  load_claim
+  if [[ -n "$phase" ]]; then
+    case "$phase" in concept|plan|build|deliver) C_PHASE="$phase" ;; *) die 64 "phase must be concept, plan, build or deliver" ;; esac
+  fi
+  if [[ -z "$head" ]]; then
+    head=$(git -C "$WC" rev-parse HEAD 2>/dev/null || true)
+  fi
+  if [[ -n "$head" ]]; then
+    is_sha "$head" || die 64 "--head must be a commit SHA"
+    C_HEAD="$head"
+  fi
+  if [[ $have_next -eq 1 ]]; then
+    if [[ -n "$next_file" ]]; then
+      [[ -f "$next_file" ]] || die 64 "no such file: $next_file"
+      C_NEXT=$(cat "$next_file")
+    else
+      C_NEXT="$next"
+    fi
+  fi
+  C_TOUCHED=$(now_iso)
+  save_claim
+  printf 'checkpointed\n'
+  print_state
+}
+
+cmd_base() {
+  [[ $# -eq 0 ]] || usage
+  load_claim
+  [[ -f "$CLAIM" ]] || die 4 "no claim"
+  if is_sha "$C_BASE"; then
+    printf '%s\n' "$C_BASE"
+  else
+    printf 'capstan-claim: degraded: base commit unknown (the claim predates base_commit or was adopted); a red check cannot be classified as pre-existing from the claim, say so in the report\n' >&2
+    exit 6
+  fi
+}
+
+cmd_head() {
+  [[ $# -eq 0 ]] || usage
+  load_claim
+  [[ -f "$CLAIM" ]] || die 4 "no claim"
+  [[ -n "$C_HEAD" ]] || die 6 "no checkpoint recorded"
+  printf '%s\n' "$C_HEAD"
+}
+
+cmd_verified() {
+  local owner="" commit=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --owner) owner="$2"; shift 2 ;;
+      --commit) commit="$2"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n "$owner" && -n "$commit" ]] || usage
+  require_owner "$owner"
+  [[ -f "$CLAIM" ]] || die 4 "no CLAIM.md"
+  commit=$(git -C "$WC" rev-parse --verify "$commit^{commit}" 2>/dev/null) || die 64 "commit does not resolve in $WC: $commit"
+  load_claim
+  C_VERIFIED="$commit"
+  C_VERIFIED_AT=$(now_iso)
+  C_TOUCHED=$(now_iso)
+  save_claim
+  printf 'verified_commit: %s\n' "$commit"
+}
+
+cmd_drift() {
+  local home="" rel=".capstan"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in --document-home) home="$2"; shift 2 ;; *) usage ;; esac
+  done
+  load_claim
+  [[ -f "$CLAIM" ]] || die 4 "no claim"
+  is_sha "$C_VERIFIED" || die 6 "degraded: no verified commit recorded; run verify before delivering"
+  if [[ -n "$home" ]]; then
+    local abs
+    abs=$(cd "$home" 2>/dev/null && pwd -P) || abs="$home"
+    case "$abs" in
+      "$WC"/*) rel="${abs#"$WC"/}" ;;
+      *) rel="" ;; # a home outside the working copy shelters no path inside it
+    esac
+  fi
+  local head commits changed dirty outside=0 line
+  # The scratch is never delivery-relevant: gitignored on a configured
+  # repository, and never part of what ships even where it is not.
+  classify_path() {
+    case "$1" in
+      .capstan/effort/*|".capstan/effort "[0-9]*/*)
+        printf '  scratch        %s\n' "$1" ;;
+      *)
+        if [[ -n "$rel" && ( "$1" == "$rel/"* || "$1" == "$rel" ) ]]; then
+          printf '  document home  %s\n' "$1"
+        else
+          printf '  OUTSIDE        %s\n' "$1"; outside=$((outside + 1))
+        fi ;;
+    esac
+  }
+  head=$(git -C "$WC" rev-parse HEAD)
+  printf 'verified_commit: %s\nhead: %s\n' "$C_VERIFIED" "$head"
+  commits=$(git -C "$WC" rev-list --count "$C_VERIFIED..$head" 2>/dev/null || echo unknown)
+  printf 'commits since verification: %s\n' "$commits"
+  # -z keeps a path with a space or a quote as it is, one per NUL, rather than
+  # quoted the way the human-readable forms print it. Uncommitted work is the
+  # tracked diff against HEAD plus untracked files; neither carries a status
+  # prefix, so a rename is two plain paths rather than one entry to unpick.
+  changed=$(git -C "$WC" diff --name-only -z --no-renames "$C_VERIFIED" "$head" 2>/dev/null | tr '\0' '\n' || true)
+  dirty=$( { git -C "$WC" diff --name-only -z --no-renames HEAD 2>/dev/null; git -C "$WC" ls-files -o --exclude-standard -z 2>/dev/null; } | tr '\0' '\n' || true)
+  printf 'changed since verification:\n'
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    classify_path "$line"
+  done <<EOF
+$changed
+EOF
+  printf 'uncommitted:\n'
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    classify_path "$line"
+  done <<EOF
+$dirty
+EOF
+  if [[ $outside -gt 0 ]]; then
+    printf 'drift: %s path(s) outside the document home changed since %s; the verification does not cover HEAD\n' "$outside" "$C_VERIFIED"
+    exit 8
+  fi
+  printf 'drift: none outside the document home; verification of %s still covers HEAD for the checks it ran\n' "$C_VERIFIED"
+}
+
+cmd_dispatch() {
+  local owner="" kind="" slice="" max_builders="" max_fix="" count inflight
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --owner) owner="$2"; shift 2 ;;
+      --slice) slice="$2"; shift 2 ;;
+      --max-builders) max_builders="$2"; shift 2 ;;
+      --max-fix) max_fix="$2"; shift 2 ;;
+      build|fix|note) kind="$1"; shift ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n "$owner" && -n "$kind" ]] || usage
+  require_owner "$owner"
+  [[ -f "$CLAIM" ]] || die 4 "no CLAIM.md"
+  load_claim
+  [[ -n "$max_builders" ]] || max_builders=$(config_key capstan-max-builders "$DEFAULT_MAX_BUILDERS")
+  [[ -n "$max_fix" ]] || max_fix=$(config_key capstan-max-fix-dispatches "$DEFAULT_MAX_FIX")
+  case "$kind" in
+    build|fix)
+      [[ -n "$slice" ]] || die 64 "--slice is required for $kind"
+      is_slice_name "$slice" || die 64 "slice names may hold letters, digits, dot, underscore and dash: $slice"
+      if in_flight "$slice"; then
+        printf 'capstan-claim: %s is already in flight; wait for its return\n' "$slice" >&2
+        print_state >&2
+        exit 5
+      fi
+      inflight=$(in_flight_count)
+      if [[ $inflight -ge $max_builders ]]; then
+        printf 'capstan-claim: builder limit %s reached (in flight: %s); wait for a return before dispatching %s\n' "$max_builders" "$C_BUILDERS" "$slice" >&2
+        print_state >&2
+        exit 5
+      fi
+      if [[ "$kind" == "fix" ]]; then
+        adopted_count_known "$slice"
+        count=$(fix_count "$slice")
+        if [[ $count -ge $max_fix ]]; then
+          printf 'capstan-claim: fix-dispatch limit %s reached on %s (count %s); nothing changed. Report what remains to the operator; raise capstan-max-fix-dispatches or recut the slice to continue\n' "$max_fix" "$slice" "$count" >&2
+          print_state >&2
+          exit 5
+        fi
+        count=$((count + 1))
+        set_fix_count "$slice" "$count"
+      fi
+      add_in_flight "$slice"
+      ;;
+    note)
+      adopted_count_known note
+      count=$(fix_count note)
+      if [[ $count -ge $max_fix ]]; then
+        printf 'capstan-claim: fix-dispatch limit %s reached on the note (count %s); nothing changed. Report what remains to the operator\n' "$max_fix" "$count" >&2
+        print_state >&2
+        exit 5
+      fi
+      count=$((count + 1))
+      set_fix_count note "$count"
+      ;;
+  esac
+  C_TOUCHED=$(now_iso)
+  save_claim
+  case "$kind" in
+    build) printf 'dispatched build on %s (%s of %s builders in flight)\n' "$slice" "$(in_flight_count)" "$max_builders" ;;
+    fix)
+      printf 'dispatched fix %s of %s on %s (%s of %s builders in flight)\n' "$count" "$max_fix" "$slice" "$(in_flight_count)" "$max_builders"
+      [[ $count -ge 3 ]] && printf 'design-question: fires (fix dispatch %s on %s)\n' "$count" "$slice"
+      ;;
+    note)
+      printf 'dispatched fix %s of %s on the note\n' "$count" "$max_fix"
+      [[ $count -ge 3 ]] && printf 'design-question: fires (fix dispatch %s on the note)\n' "$count"
+      ;;
+  esac
+  print_state
+}
+
+cmd_return() {
+  local owner="" slice=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --owner) owner="$2"; shift 2 ;;
+      --slice) slice="$2"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n "$owner" && -n "$slice" ]] || usage
+  is_slice_name "$slice" || die 64 "slice names may hold letters, digits, dot, underscore and dash: $slice"
+  require_owner "$owner"
+  [[ -f "$CLAIM" ]] || die 4 "no CLAIM.md"
+  load_claim
+  if in_flight "$slice"; then
+    remove_in_flight "$slice"
+    C_TOUCHED=$(now_iso)
+    save_claim
+    printf 'returned %s\n' "$slice"
+  else
+    printf 'returned %s (was not recorded in flight)\n' "$slice"
+  fi
+  print_state
+}
+
+cmd_reset() {
+  local owner="" slice="" count=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --owner) owner="$2"; shift 2 ;;
+      --slice) slice="$2"; shift 2 ;;
+      --count) count="$2"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [[ -n "$owner" && -n "$slice" ]] || usage
+  is_slice_name "$slice" || die 64 "slice names may hold letters, digits, dot, underscore and dash: $slice"
+  [[ "$count" =~ ^[0-9]+$ ]] || die 64 "--count must be a whole number"
+  require_owner "$owner"
+  [[ -f "$CLAIM" ]] || die 4 "no CLAIM.md"
+  load_claim
+  local before
+  before=$(fix_count "$slice")
+  set_fix_count "$slice" "$count"
+  C_TOUCHED=$(now_iso)
+  save_claim
+  lock_note "fix count on $slice set from $before to $count by $owner"
+  if [[ "$count" -eq 0 ]]; then
+    printf 'reset %s from %s to 0; record the recut in decisions.md\n' "$slice" "$before"
+  else
+    printf 'set %s from %s to %s\n' "$slice" "$before" "$count"
+  fi
+  print_state
+}
+
+# --- main -------------------------------------------------------------------
+
+[[ $# -ge 2 ]] || usage
+command="$1"; shift
+case "$command" in
+  -h|--help|help) usage ;;
+esac
+resolve_wc "$1"; shift
+case "$command" in
+  acquire) cmd_acquire "$@" ;;
+  status) cmd_status "$@" ;;
+  release) cmd_release "$@" ;;
+  takeover) cmd_takeover "$@" ;;
+  checkpoint) cmd_checkpoint "$@" ;;
+  base) cmd_base "$@" ;;
+  head) cmd_head "$@" ;;
+  verified) cmd_verified "$@" ;;
+  drift) cmd_drift "$@" ;;
+  dispatch) cmd_dispatch "$@" ;;
+  return) cmd_return "$@" ;;
+  reset) cmd_reset "$@" ;;
+  *) usage ;;
+esac

@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+#
+# capstan-scratch-clean: delete a finished effort's scratch and nothing else.
+#
+# Deletes exactly <working copy>/.capstan/effort/ once it is verified to belong
+# to the effort being closed and to the owner asking, plus the copies a sync
+# service makes of it, which are recognised by name: `effort 2`, `effort 3`,
+# and so on. A copy whose claim names a different effort is left in place and
+# named, unless --any-effort says that effort is known to be closed. Any other
+# entry in .capstan/ is left alone and named in the report, however its name
+# begins.
+#
+# Usage:
+#   capstan-scratch-clean <wc> --effort SLUG --owner ID [--dry-run] [--allow-unclaimed] [--any-effort]
+#
+# Exit codes:
+#   0  done, or nothing to delete
+#   2  refused: the scratch belongs to another effort or another owner
+#   7  <wc> is not the root of a git working copy, or .capstan is not a plain directory
+#   64 usage error
+
+set -euo pipefail
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 64
+}
+
+die() {
+  local code="$1"; shift
+  printf 'capstan-scratch-clean: %s\n' "$*" >&2
+  exit "$code"
+}
+
+[[ $# -ge 1 ]] || usage
+WC_ARG="$1"; shift
+EFFORT=""; OWNER=""; DRY=0; ALLOW_UNCLAIMED=0; ANY_EFFORT=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --effort) EFFORT="$2"; shift 2 ;;
+    --owner) OWNER="$2"; shift 2 ;;
+    --dry-run) DRY=1; shift ;;
+    --allow-unclaimed) ALLOW_UNCLAIMED=1; shift ;;
+    --any-effort) ANY_EFFORT=1; shift ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$EFFORT" && -n "$OWNER" ]] || usage
+
+[[ -d "$WC_ARG" ]] || die 7 "not a directory: $WC_ARG"
+TOP=$(git -C "$WC_ARG" rev-parse --show-toplevel 2>/dev/null) || die 7 "not a git working copy: $WC_ARG"
+[[ "$(cd "$TOP" && pwd -P)" == "$(cd "$WC_ARG" && pwd -P)" ]] || die 7 "not the root of its working copy: $WC_ARG"
+WC="$TOP"
+CAP="$WC/.capstan"
+
+if [[ ! -e "$CAP" ]]; then
+  printf 'nothing to delete: %s does not exist\n' "$CAP"
+  exit 0
+fi
+[[ -L "$CAP" ]] && die 7 "$CAP is a symlink; refusing to delete through it"
+[[ -d "$CAP" ]] || die 7 "$CAP is not a directory"
+
+claim_field() { # FILE NAME
+  awk -v k="$2: " '/^## Next/ { exit } index($0, k) == 1 { print substr($0, length(k) + 1); exit }' "$1"
+}
+
+remove() { # PATH KIND
+  if [[ $DRY -eq 1 ]]; then
+    printf 'would delete %s: %s\n' "$2" "$1"
+    return 0
+  fi
+  if [[ -L "$1" ]]; then
+    rm -- "$1"
+    printf 'deleted %s (symlink removed, target untouched): %s\n' "$2" "$1"
+  else
+    rm -rf -- "$1"
+    printf 'deleted %s: %s\n' "$2" "$1"
+  fi
+}
+
+deleted=0
+kept=0
+
+# The scratch itself.
+SCRATCH="$CAP/effort"
+if [[ -L "$SCRATCH" ]]; then
+  remove "$SCRATCH" scratch
+  deleted=$((deleted + 1))
+elif [[ -d "$SCRATCH" ]]; then
+  CLAIM="$SCRATCH/CLAIM.md"
+  LOCK="$SCRATCH/.claim.lock"
+  if [[ -f "$CLAIM" ]]; then
+    claimed=$(claim_field "$CLAIM" effort)
+    [[ "$claimed" == "$EFFORT" ]] || die 2 "scratch belongs to effort '$claimed', not '$EFFORT'; not deleted"
+  elif [[ $ALLOW_UNCLAIMED -eq 0 ]]; then
+    die 2 "scratch has no CLAIM.md, so its effort cannot be verified; pass --allow-unclaimed to delete it anyway"
+  fi
+  if [[ -f "$LOCK/owner" ]]; then
+    holder=$(cat "$LOCK/owner")
+    [[ "$holder" == "$OWNER" ]] || die 2 "scratch lock is held by '$holder', not '$OWNER'; not deleted"
+  fi
+  remove "$SCRATCH" scratch
+  deleted=$((deleted + 1))
+elif [[ -e "$SCRATCH" ]]; then
+  die 7 "$SCRATCH is neither a directory nor a symlink"
+fi
+
+# Sync-made copies, recognised by the exact shape a sync service produces.
+while IFS= read -r entry; do
+  [[ -n "$entry" ]] || continue
+  name=${entry##*/}
+  [[ "$name" == "effort" ]] && continue
+  case "$name" in
+    effort\ [0-9]|effort\ [0-9][0-9]|effort\ [0-9][0-9][0-9])
+      if [[ -L "$entry" || -d "$entry" ]]; then
+        if [[ -d "$entry" && ! -L "$entry" && -f "$entry/CLAIM.md" ]]; then
+          copy_effort=$(claim_field "$entry/CLAIM.md" effort)
+          if [[ -n "$copy_effort" && "$copy_effort" != "$EFFORT" && $ANY_EFFORT -eq 0 ]]; then
+            printf 'left in place (sync copy holds a claim for effort %s, not %s; pass --any-effort once that effort is known closed): %s\n' "$copy_effort" "$EFFORT" "$entry"
+            kept=$((kept + 1))
+            continue
+          fi
+          printf 'sync copy %s held a claim for effort %s\n' "$name" "$copy_effort"
+        fi
+        remove "$entry" "sync copy"
+        deleted=$((deleted + 1))
+      else
+        printf 'left in place (not a directory): %s\n' "$entry"
+        kept=$((kept + 1))
+      fi
+      ;;
+    effort*)
+      printf 'left in place (unrecognised name, not a sync copy): %s\n' "$entry"
+      kept=$((kept + 1))
+      ;;
+  esac
+done <<EOF
+$(find "$CAP" -mindepth 1 -maxdepth 1 -name 'effort*' 2>/dev/null | LC_ALL=C sort)
+EOF
+
+if [[ $deleted -eq 0 ]]; then
+  printf 'nothing to delete: no scratch or sync copy under %s\n' "$CAP"
+fi
+printf 'deleted %s, left %s\n' "$deleted" "$kept"

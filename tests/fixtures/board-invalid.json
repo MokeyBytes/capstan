@@ -1,0 +1,88 @@
+{
+  "items": [
+    {
+      "id": "PVTI_1",
+      "title": "slice-01",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-01",
+        "number": 1,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/1",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "planned",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_2",
+      "title": "slice-02",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "slice-02",
+        "number": 2,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/2",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_80",
+      "title": "orphan",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "orphan",
+        "number": 80,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/80",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "capstan Status": "building",
+      "status": "Todo"
+    },
+    {
+      "id": "PVTI_81",
+      "title": "mislabelled",
+      "assignees": [],
+      "labels": [],
+      "content": {
+        "type": "Issue",
+        "title": "mislabelled",
+        "number": 81,
+        "repository": "acme/widgets",
+        "url": "https://github.com/acme/widgets/issues/81",
+        "body": "Migrated from `tracker.md` at commit 0123abc."
+      },
+      "repository": "https://github.com/acme/widgets",
+      "milestone": {
+        "title": "effort-a",
+        "description": "",
+        "dueOn": null
+      },
+      "capstan Status": "done",
+      "status": "Todo"
+    }
+  ],
+  "totalCount": 4
+}

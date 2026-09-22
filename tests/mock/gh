@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+#
+# tests/mock/gh: stands in for gh under tests. Never reaches the network.
+#
+# It imitates the two calls capstan-tracker makes, from fixtures:
+#   gh project item-list N --owner O --format json [--limit N] [--jq EXPR]
+#   gh api repos/O/R/issues/N/comments --paginate [--jq EXPR]
+#
+# Controlled by environment variables:
+#   GH_MOCK_ITEMS           board JSON: {"items": [...], "totalCount": T}.
+#                           --limit N emits only the first N items (default 30)
+#                           while totalCount stays as in the file.
+#   GH_MOCK_COMMENTS_DIR    holds <issue-number>.json, each a JSON array of
+#                           {"body": "..."}; a missing file is an empty array.
+#   GH_MOCK_FAIL_LIST=1     item-list prints "unknown owner type", exits 1.
+#   GH_MOCK_FAIL_ISSUE=N    the comments call for issue N exits 1, HTTP 500.
+#   GH_MOCK_TOTAL_OVERRIDE  replaces totalCount in the item-list response.
+#   GH_MOCK_SHORT_ONCE=PATH while that file exists, one item-list call emits
+#                           at most 30 items and deletes the file; the next
+#                           call honours --limit again.
+#   GH_MOCK_LOG=PATH        every argv line is appended here.
+#
+# --jq is applied with the real jq binary, a test-only dependency.
+
+set -euo pipefail
+
+ARGV="$*"
+if [[ -n "${GH_MOCK_LOG:-}" ]]; then
+  printf '%s\n' "$ARGV" >> "$GH_MOCK_LOG"
+fi
+
+unsupported() {
+  printf 'mock gh: unsupported: %s\n' "$ARGV" >&2
+  exit 99
+}
+
+need_jq() {
+  command -v jq > /dev/null 2>&1 && return 0
+  printf 'mock gh: jq is required to apply --jq and is not on PATH\n' >&2
+  exit 98
+}
+
+# apply_jq EXPR: filter stdin the way gh does, strings raw, other values compact.
+apply_jq() {
+  need_jq
+  jq -r -c "$1"
+}
+
+item_list() {
+  local project="${1:-}" limit="" format="" jqexpr="" owner="" cap
+  [[ -n "$project" ]] || unsupported
+  shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit|-L) limit="${2:-}"; shift 2 ;;
+      --limit=*)  limit="${1#--limit=}"; shift ;;
+      --format)   format="${2:-}"; shift 2 ;;
+      --format=*) format="${1#--format=}"; shift ;;
+      --jq|-q)    jqexpr="${2:-}"; shift 2 ;;
+      --jq=*)     jqexpr="${1#--jq=}"; shift ;;
+      --owner)    owner="${2:-}"; shift 2 ;;
+      --owner=*)  owner="${1#--owner=}"; shift ;;
+      *)          unsupported ;;
+    esac
+  done
+  [[ -n "$owner" ]] || unsupported
+
+  if [[ "${GH_MOCK_FAIL_LIST:-}" == 1 ]]; then
+    printf 'unknown owner type\n' >&2
+    exit 1
+  fi
+
+  [[ -n "${GH_MOCK_ITEMS:-}" && -r "$GH_MOCK_ITEMS" ]] || {
+    printf 'mock gh: GH_MOCK_ITEMS must name a readable board JSON file\n' >&2
+    exit 99
+  }
+  need_jq
+
+  [[ -n "$limit" ]] || limit=30
+  case "$limit" in
+    ''|*[!0-9]*) printf 'invalid value for --limit: %s\n' "$limit" >&2; exit 1 ;;
+  esac
+  cap="$limit"
+  if [[ -n "${GH_MOCK_SHORT_ONCE:-}" && -e "$GH_MOCK_SHORT_ONCE" ]]; then
+    rm -f "$GH_MOCK_SHORT_ONCE"
+    [[ $cap -le 30 ]] || cap=30
+  fi
+
+  if [[ "$format" != json ]]; then
+    # Real gh prints a fixed table without --format json: no milestone, no
+    # custom field, whatever --jq said.
+    printf 'TYPE\tTITLE\tNUMBER\tREPOSITORY\tID\n'
+    jq -r --argjson n "$cap" '
+      .items[:$n][] | [
+        (.content.type // ""), (.content.title // .title // ""),
+        (.content.number // ""), (.content.repository // ""), .id
+      ] | @tsv' "$GH_MOCK_ITEMS"
+    exit 0
+  fi
+
+  jq -c --argjson n "$cap" --arg total "${GH_MOCK_TOTAL_OVERRIDE:-}" '
+    { items: .items[:$n],
+      totalCount: (if $total == "" then .totalCount else ($total | tonumber) end) }
+  ' "$GH_MOCK_ITEMS" | {
+    if [[ -n "$jqexpr" ]]; then apply_jq "$jqexpr"; else cat; fi
+  }
+}
+
+api_call() {
+  local path="${1:-}" paginate=0 jqexpr="" number file
+  [[ -n "$path" ]] || unsupported
+  shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --paginate) paginate=1; shift ;;
+      --jq|-q)    jqexpr="${2:-}"; shift 2 ;;
+      --jq=*)     jqexpr="${1#--jq=}"; shift ;;
+      *)          unsupported ;;
+    esac
+  done
+  number="$(printf '%s' "$path" | sed -E -n 's#^repos/[^/]+/[^/]+/issues/([0-9]+)/comments$#\1#p')"
+  [[ -n "$number" ]] || unsupported
+  # The helper must follow every page; a call that does not is not the
+  # documented read.
+  [[ $paginate -eq 1 ]] || unsupported
+
+  if [[ -n "${GH_MOCK_FAIL_ISSUE:-}" && "$GH_MOCK_FAIL_ISSUE" == "$number" ]]; then
+    printf 'HTTP 500: Internal Server Error (https://api.github.com/%s)\n' "$path" >&2
+    exit 1
+  fi
+
+  file="${GH_MOCK_COMMENTS_DIR:-/nonexistent}/$number.json"
+  {
+    if [[ -r "$file" ]]; then cat "$file"; else printf '[]\n'; fi
+  } | {
+    if [[ -n "$jqexpr" ]]; then apply_jq "$jqexpr"; else cat; fi
+  }
+}
+
+case "${1:-} ${2:-}" in
+  "project item-list") shift 2; item_list "$@" ;;
+  "api "*)             shift 1; api_call "$@" ;;
+  *)                   unsupported ;;
+esac

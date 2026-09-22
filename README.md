@@ -4,7 +4,7 @@
 
 A Claude Code plugin for taking work from concept to delivery, with you at three gates.
 
-Five roles carry the work, a discipline for each part of it, and three times the run stops so you can decide whether it continues. It is plain markdown, plus one vendored bash library that `walkthrough` builds throwaway scripts from. Nothing here needs code running to stay alive.
+Five roles carry the work, a discipline for each part of it, and three times the run stops so you can decide whether it continues. It is plain markdown, plus a bash library that `walkthrough` builds throwaway scripts from and three small helpers the `effort` skill calls to take a lock, delete its scratch, and read a tracker board. Nothing runs on its own: no daemon, no poller, no hook. [`DESIGN.md`](DESIGN.md) says why those helpers exist and what stays out.
 
 This repository's own [glossary](.capstan/CONTEXT.md) defines every word it uses (see [document home](#document-home) if you've pointed yours elsewhere), and [`DESIGN.md`](DESIGN.md) holds the reasoning behind the shape.
 
@@ -43,11 +43,11 @@ What happens, in order:
 | 2. Plan locked | How, cut into slices, what runs parallel, what was assumed | Right shape? |
 | 3. Ready to deliver | What was built, what review and verification found, what goes to whom | Ship? |
 
-**The run ends at every gate.** Nothing polls, nothing waits in the background, and the crew never asks whether it should stop. The run being over is what makes the gate real. `.capstan/effort/CLAIM.md` records which phase the effort reached and what is still outstanding inside it, so the next session picks up where the last one stopped, however many hours later.
+**The run ends at every gate.** Nothing polls, nothing waits in the background, and the crew never asks whether it should stop. The run being over is what makes the gate real. `.capstan/effort/CLAIM.md` records which phase the effort reached, the commit it started from, the commit its checks last passed against, and what is still outstanding inside it, so the next session picks up where the last one stopped, however many hours later. Beside it sits a lock that exactly one session can hold: a second session starting the same effort is refused and told who holds it, and only you decide whether that session resumes it or takes it over.
 
 **Unclear requirements never stop the run.** The crew takes the most defensible reading, writes the assumption into the decision log, and keeps going. Every assumption surfaces at the next gate, where correcting one costs almost nothing. Four things do stop it: secrets and credentials, anything a third party will see, anything that costs money, and anything destructive or production-facing. The one delete the crew makes on its own authority is the gitignored scratch, at delivery.
 
-Three efforts at once is the ceiling. Three gates each against one reader is nine briefs a cycle, which is about where briefs stop being read and start being rubber-stamped. Fan-out inside a single effort has no limit.
+Three efforts at once is the ceiling. Three gates each against one reader is nine briefs a cycle, which is about where briefs stop being read and start being rubber-stamped. Inside one effort, three Builders run at once by default and a slice gets five fix rounds before the run stops and asks you; both are keys in your `CLAUDE.md` or `AGENTS.md`, `capstan-max-builders` and `capstan-max-fix-dispatches`, and the counts live in the claim so they survive the gaps between runs.
 
 ## The disciplines
 
@@ -81,14 +81,14 @@ By default, everything lands in `.capstan/`, inside the repository the work is h
   decisions.md    one line per decision. committed.
   decisions/      a full record, only when one is earned. committed.
   tracker.md      one row per slice: effort, slice, status, merge commit. committed.
-  effort/         scratch: the claim, spec, plan, scout returns. gitignored.
+  effort/         scratch: the lock, the claim, spec, plan, scout returns. gitignored.
 ```
 
-`effort` and `setup` both make sure `.capstan/effort/` is in your `.gitignore`, so you never have to add it by hand. That folder, and any sync-made copy of it, is deleted at delivery, because a stale spec is worse than no spec: the next agent reads it as current.
+`effort` and `setup` both make sure `.capstan/effort/` is in your `.gitignore`, so you never have to add it by hand. That folder, and any copy a sync service makes of it (`effort 2`, `effort 3`), is deleted at delivery, because a stale spec is worse than no spec: the next agent reads it as current. The delete names those paths exactly, after checking the claim inside belongs to the effort being closed; anything else in `.capstan/` is left alone, whatever it is called.
 
 `tracker.md` answers what shipped, one row per slice, with the commit that merged it, and it is on by default, so you get it without configuring anything.
 
-Capstan reads three keys from your own `CLAUDE.md` or `AGENTS.md` rather than hardcoding any of them. `capstan-document-home` and `capstan-tracker` are the two sections below. `setup` always writes `capstan-document-home`; it writes `capstan-tracker` only when you choose GitHub, and removes any existing line there when you choose the default instead. `capstan-knowledge-base` is where the permanent per-effort note goes, and it is yours to write; leave it out and the Courier skips the note and says so.
+Capstan reads five keys from your own `CLAUDE.md` or `AGENTS.md` rather than hardcoding any of them. `capstan-document-home` and `capstan-tracker` are the two sections below. `setup` always writes `capstan-document-home`; it writes `capstan-tracker` only when you choose GitHub, and removes any existing line there when you choose the default instead. `capstan-knowledge-base` is where the permanent per-effort note goes, and it is yours to write; leave it out and the Courier skips the note and says so. `capstan-max-builders` and `capstan-max-fix-dispatches` bound the fan-out inside one effort, default 3 and 5, and are yours to raise or lower; leave them out and the defaults apply.
 
 ## Document home
 
@@ -168,13 +168,13 @@ Four costs worth knowing before you turn this on:
 
 - **A public repository asks for confirmation on every write.** Every write to the board there is third-party-visible, so the operator confirms it, the same as any other third-party-visible action; a private repository writes unattended, the same as `tracker.md` always has. The tracker is written on every slice transition, so this is the cost that changes daily operation most.
 - **GitHub unreachable stops the run.** No retry, no backoff, no bounded wait. A rate limit and an expired token end it the same way.
-- **Reading the full tracker costs more.** `tracker.md` is one file read. A board reconstructs the effort, the slice and the status in one call, but the merge commit lives in a comment on each issue, so a full read costs one call plus one more per slice.
-- **Moving onto GitHub deletes your `tracker.md`.** Choosing GitHub on a project that already has a `tracker.md` carries every row onto the board as an issue, then deletes the file once every row has one carrying its status. `setup` describes the batch first, how many rows and how many milestones, and asks for one approval covering the whole thing, before either key is written, so refusing writes no key and leaves the rows where they are. That delete needs the operator's approval on a public repository and a private one alike; the per-write confirmation above is the only part that depends on whether the repository is public.
+- **Reading the full tracker costs more.** `tracker.md` is one file read. A board reconstructs the effort, the slice and the status in one call, but the merge commit lives in a comment on each issue, so a full read costs one call plus one more per merged slice. The read is complete or refused: it checks what came back against the count the board reports, and a board it cannot read whole stops the run rather than passing off part of it as all of it.
+- **Moving onto GitHub deletes your `tracker.md`.** Choosing GitHub on a project that already has a `tracker.md` carries every row onto the board as an issue, then deletes the file once a read of the board back matches it row for row, status and merge commit included. `setup` describes the batch first, how many rows and how many milestones, and asks for one approval covering the whole thing, before either key is written, so refusing writes no key and leaves the rows where they are. That delete needs the operator's approval on a public repository and a private one alike; the per-write confirmation above is the only part that depends on whether the repository is public.
 
 Moving back costs something different:
 
 - **It needs your approval, the same way.** `setup` describes the batch first, how many rows and how many milestones are on the board, before closing or removing anything. Decline and it tells you the same thing: how many rows are on the board and that leaving them there strands them. The run stops there and writes no key.
-- **It closes every issue and removes every item from the board.** That removal is the only delete the reverse makes. The issues stay, closed rather than gone. The board stays too, untouched apart from the removals. Each milestone closes, once every row under it is back, rather than being deleted.
+- **It closes every issue and removes every item from the board.** That removal is the only delete the reverse makes, and it starts only after the rebuilt `tracker.md` has been read back against the board and matched row for row. The issues stay, closed rather than gone. The board stays too, untouched apart from the removals. Each milestone closes, once every row under it is back, rather than being deleted.
 - **An interrupted run can leave rows on both surfaces until you run `setup` again.** That is deliberate. A row nobody can get back is worse than a duplicate a second run clears up.
 
 ## Upgrading
@@ -233,6 +233,8 @@ skills/effort/
   PHASE-2-PLAN.md
   PHASE-3-BUILD.md
   PHASE-4-DELIVER.md
+  TRACKER-GITHUB.md     the board surface, read when capstan-tracker names one
+  bin/                  capstan-claim, capstan-scratch-clean, capstan-tracker: called by the phases above and by setup and verify
 
 skills/writing-for-agents/
   SKILL.md
@@ -242,7 +244,7 @@ skills/writing-for-agents/
 
 skills/walkthrough/
   SKILL.md              identity, how to author a stage, the two guards before a write leaves the machine
-  template.sh           vendored library, never edited
+  template.sh           the library, forked from upstream; CREDIT.md lists every change
   LICENSE, CREDIT.md    upstream is MIT, see the licence section
 
 skills/codebase-design/
@@ -268,7 +270,15 @@ skills/unslop/
   LICENSE, CREDIT.md    upstream is MIT, see the licence section
 ```
 
-The Architect reads the file for the phase it is in, so a run that reaches gate two with no `PHASE-2-PLAN.md` beside it has nothing to follow and improvises a plan phase instead. Take the whole directory.
+The Architect reads the file for the phase it is in, so a run that reaches gate two with no `PHASE-2-PLAN.md` beside it has nothing to follow and improvises a plan phase instead. Take the whole directory. The helpers under `skills/effort/bin/` need bash 3.2 or later and git; `capstan-tracker` also needs `gh`.
+
+## Checks
+
+```bash
+bash tests/run.sh
+```
+
+That runs every behavioural test under `tests/`, against the helpers and the walkthrough library, in temporary repositories with a mock `gh`, so nothing needs credentials or a network. The mock needs `jq`, which the helpers themselves do not. It also runs `shellcheck` when installed. The same command runs in CI on Linux and macOS, and running it with `/bin/bash` on a Mac exercises everything under bash 3.2.
 
 ## Known limits
 
@@ -282,6 +292,10 @@ The Architect reads the file for the phase it is in, so a run that reaches gate 
 
 **Fan-out does nothing for single-artifact work.** Parallel Builders need slices that own different files. A document, a video script, a single config file: each is one artifact and inherently one Builder. Software usually fans out because slices own different things. Most other work does not, and a one-slice plan there is correct rather than a failure to parallelise.
 
+**The helpers refuse; they do not intercept.** `capstan-claim` refuses a second owner, a sixth fix dispatch, or a fourth Builder only when the Architect calls it, which the skills tell it to do before every such step. Nothing stops an agent from running `rm -rf` or spawning a Builder by hand. The tests prove what each helper does when called, not that every agent calls it.
+
+**The board read has been tested against a mock, not a live board, since the helper landed.** `capstan-tracker`'s completeness check, repository scoping and diff are exercised by `tests/test_tracker.sh` against a mock `gh` built from gh 2.101.0's own JSON shape. The first real migration through it is the integration trial still owed.
+
 **The knowledge-base note is reviewed whole, when there is one.** The note is never committed, so it has no fixed point to diff against, and the Reviewer reads the whole file rather than a diff. A project with no `capstan-knowledge-base` key gets no note, and then there is nothing to review.
 
 ## Licence
@@ -292,7 +306,7 @@ Some skills here are not ours. Every one is MIT, and every one is redistributed 
 
 - [`skills/writing-for-agents/`](skills/writing-for-agents/): `SKILL.md` and `SKILL-MECHANICS.md` by [Matt Pocock](https://github.com/mattpocock/skills). `AUDIT.md` beside them is ours.
 - [`skills/unslop/`](skills/unslop/): `SKILL.md` by [Lauren Tan](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop), via cursor/plugins. Two lines changed.
-- [`skills/walkthrough/`](skills/walkthrough/): `template.sh` by [Matt Pocock](https://github.com/mattpocock/skills), vendored byte-identical. `SKILL.md` beside it is ours, written fresh around the library.
+- [`skills/walkthrough/`](skills/walkthrough/): `template.sh` by [Matt Pocock](https://github.com/mattpocock/skills), forked: the library stops on closed input, validates keys, and refuses multi-line values, with every change listed in its `CREDIT.md` and covered by `tests/test_walkthrough.sh`. `SKILL.md` beside it is ours, written fresh around the library.
 - [`skills/diagnosing-bugs/`](skills/diagnosing-bugs/): `SKILL.md` by [Matt Pocock](https://github.com/mattpocock/skills). Three lines repointed at Capstan's own paths and at `walkthrough`.
 - [`skills/codebase-design/`](skills/codebase-design/): `SKILL.md`, `DEEPENING.md` and `DESIGN-IT-TWICE.md` by [Matt Pocock](https://github.com/mattpocock/skills). One line repointed; the other two files are byte-identical.
 - [`skills/to-questionnaire/`](skills/to-questionnaire/): `SKILL.md` by [Matt Pocock](https://github.com/mattpocock/skills). Two changes: the invocation flag, and where the document lands and where its answers go.
@@ -301,6 +315,6 @@ Some skills here are not ours. Every one is MIT, and every one is redistributed 
 Beyond those, nothing is vendored, though some ideas are borrowed, all from [Matt Pocock](https://github.com/mattpocock/skills). The prose is ours; the mechanics are his.
 
 - The frontier in `interview`: a design tree, where a question depending on an open question waits for a later round. Sharpened from `grilling`.
-- The `next` line in `CLAIM.md`: what the run after this one picks up and each live slice's fix-dispatch count, written for the agent that resumes rather than the person at the gate. From `handoff`, sized down to a field in a file that already exists.
+- The `next` section in `CLAIM.md`: what the run after this one picks up, written for the agent that resumes rather than the person at the gate. From `handoff`, sized down to a field in a file that already exists. The fix-dispatch counts that once rode in it now have a line of their own, where a helper can read them.
 - The `unformed` status in the decision log: an area nobody can phrase a question about yet. His fog of war from `wayfinder`, without the issue tracker it is charted on.
 - Two moves in `interview`: challenging a term against the glossary rather than only within the session, and inventing an edge-case scenario when a relationship between concepts stays vague. From `domain-modeling`, minus its file layout.

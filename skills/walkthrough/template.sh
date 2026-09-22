@@ -5,6 +5,10 @@
 #
 # Everything above the "STAGES" marker is the wizard library: do not hand-edit
 # it. Author the per-step stages below the marker.
+#
+# The library expects a person at stdin. When input closes (EOF) it stops and
+# says what was already written rather than treating silence as a value.
+# Values land in ENV_FILE as one KEY=VALUE line each, byte-for-byte, unquoted.
 
 set -euo pipefail
 
@@ -12,6 +16,9 @@ set -euo pipefail
 # Wizard library: delightful, consistent UX, identical across every wizard.
 # ──────────────────────────────────────────────────────────────────────────
 
+# RED is part of the palette for stage authors below the marker; the linter
+# cannot see that use.
+# shellcheck disable=SC2034
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
   BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
   BLUE=$(tput setaf 4); GREEN=$(tput setaf 2); YELLOW=$(tput setaf 3); RED=$(tput setaf 1)
@@ -27,6 +34,16 @@ ENV_FILE="${ENV_FILE:-.env}"
 WRITTEN_ENV=()    # KEYs written to ENV_FILE this run
 WRITTEN_SECRET=() # secret NAMEs set this run
 SKIPPED=()        # things we couldn't do (e.g. gh missing)
+
+# write_env rebuilds ENV_FILE in a temp file beside it, which holds every value
+# captured so far. Ctrl-C or an error between writing it and removing it would
+# leave that file where .gitignore does not cover it, so its removal is owed on
+# every exit, and an interrupt re-raises itself once the file is gone.
+_WRITE_ENV_TMP=""
+_write_env_cleanup() { [[ -n "$_WRITE_ENV_TMP" ]] && rm -f "$_WRITE_ENV_TMP"; _WRITE_ENV_TMP=""; }
+trap '_write_env_cleanup' EXIT
+trap '_write_env_cleanup; trap - INT; kill -INT $$' INT
+trap '_write_env_cleanup; trap - TERM; kill -TERM $$' TERM
 
 # _clear wipes the terminal so only the current step is on screen. No-op when
 # output isn't a terminal, so piped logs stay readable.
@@ -74,74 +91,133 @@ open_url() {
   } >/dev/null 2>&1 || warn "couldn't open a browser, so visit it manually: $url"
 }
 
+# _valid_key KEY succeeds when KEY is a portable variable name. Anything else
+# is an author error: it is named on stderr and the caller stops.
+_valid_key() {
+  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] && return 0
+  printf 'invalid environment variable name: %s\n' "$1" >&2
+  return 1
+}
+
+# _input_closed WHAT: stdin closed while a prompt was waiting. Nobody is
+# answering, so nothing is guessed: report what already landed and stop.
+_input_closed() {
+  local written="nothing"
+  (( ${#WRITTEN_ENV[@]} )) && written="${WRITTEN_ENV[*]}"
+  printf '\n  input closed while waiting for %s; stopping. Written so far: %s\n' \
+    "$1" "$written" >&2
+  exit 1
+}
+
 # pause "msg" waits for the human to confirm they've done the manual part.
 pause() {
   printf '  %s%s%s ' "$DIM" "${1:-Press Enter to continue}" "$RESET"
-  read -r _ || true
+  read -r _ || _input_closed "Enter"
 }
 
 # confirm "question" is a y/N gate; returns success on yes.
 confirm() {
   local reply=""
   printf '  %s? %s [y/N] ' "$YELLOW" "$1"
-  read -r reply || true
+  read -r reply || _input_closed "a reply to: $1"
   [[ "$reply" =~ ^[Yy] ]]
 }
 
-# _existing KEY: current value of KEY in ENV_FILE, if any.
+# _existing KEY: current value of KEY in ENV_FILE, if any: the text after the
+# first "=" of the last matching line.
 _existing() {
+  _valid_key "$1" || exit 1
   [[ -f "$ENV_FILE" ]] || return 1
   local line; line=$(grep -E "^${1}=" "$ENV_FILE" | tail -n1) || return 1
   printf '%s' "${line#*=}"
 }
 
+# _read_value KEY "Prompt" [-s] does the work of ask and ask_secret; -s hides
+# the typing. Enter keeps the value already in ENV_FILE, and with none there
+# it asks before accepting an empty value, so an empty result is always
+# deliberate. Closed input stops the script. A pasted CRLF loses its CR.
+_read_value() {
+  local key="$1" prompt="$2" hidden="${3:-}" current input
+  _valid_key "$key" || exit 1
+  current=$(_existing "$key" || true)
+  while :; do
+    if [[ -n "$current" ]]; then
+      printf '  %s%s%s %s[Enter keeps current]%s ' "$BOLD" "$prompt" "$RESET" "$DIM" "$RESET"
+    else
+      printf '  %s%s%s ' "$BOLD" "$prompt" "$RESET"
+    fi
+    if [[ -n "$hidden" ]]; then
+      read -rs input || _input_closed "$key"
+      printf '\n'
+    else
+      read -r input || _input_closed "$key"
+    fi
+    input="${input%$'\r'}"
+    [[ -n "$input" ]] && break
+    if [[ -n "$current" ]]; then
+      input="$current"
+      note "kept current value"
+      break
+    fi
+    confirm "Leave $key empty?" && break
+  done
+  printf -v "$key" '%s' "$input"
+}
+
 # ask KEY "Prompt" reads a value into $KEY. Offers the existing .env value as
 # a default on re-runs (Enter keeps it). Visible input (non-secret).
-ask() {
-  local key="$1" prompt="$2" current input
-  current=$(_existing "$key" || true)
-  if [[ -n "$current" ]]; then
-    printf '  %s%s%s %s[Enter keeps current]%s ' "$BOLD" "$prompt" "$RESET" "$DIM" "$RESET"
-  else
-    printf '  %s%s%s ' "$BOLD" "$prompt" "$RESET"
-  fi
-  read -r input || true
-  [[ -z "$input" && -n "$current" ]] && input="$current"
-  printf -v "$key" '%s' "$input"
-}
+ask() { _read_value "$1" "$2"; }
 
 # ask_secret KEY "Prompt" is like ask, but input is hidden.
-ask_secret() {
-  local key="$1" prompt="$2" current input
-  current=$(_existing "$key" || true)
-  if [[ -n "$current" ]]; then
-    printf '  %s%s%s %s[Enter keeps current]%s ' "$BOLD" "$prompt" "$RESET" "$DIM" "$RESET"
-  else
-    printf '  %s%s%s ' "$BOLD" "$prompt" "$RESET"
-  fi
-  read -rs input || true
-  printf '\n'
-  [[ -z "$input" && -n "$current" ]] && input="$current"
-  printf -v "$key" '%s' "$input"
-}
+ask_secret() { _read_value "$1" "$2" -s; }
 
-# write_env KEY VALUE upserts KEY=VALUE into ENV_FILE (creates it; replaces
-# any existing line). Idempotent.
+# write_env KEY VALUE upserts KEY=VALUE into ENV_FILE (creates it). The key's
+# line is replaced where it stands, a later duplicate is dropped, every other
+# line keeps its place, and a missing key is appended. VALUE goes in
+# byte-for-byte with no quoting or escaping, so it must be a single line: one
+# holding a line break is refused and nothing is written. The file is rebuilt
+# in a temp file beside it and copied back into place, so a symlinked .env and
+# the file's mode survive. Idempotent.
 write_env() {
-  local key="$1" value="$2" tmp
-  touch "$ENV_FILE"
-  tmp=$(mktemp)
-  grep -vE "^${key}=" "$ENV_FILE" > "$tmp" || true
-  printf '%s=%s\n' "$key" "$value" >> "$tmp"
-  mv "$tmp" "$ENV_FILE"
+  local key="$1" value="$2" tmp line found=0
+  _valid_key "$key" || exit 1
+  case "$value" in
+    *$'\n'*|*$'\r'*)
+      printf 'value for %s contains a line break; .env has no portable multi-line encoding, nothing written\n' "$key" >&2
+      return 1 ;;
+  esac
+  tmp=$(mktemp "$ENV_FILE.XXXXXX")
+  _WRITE_ENV_TMP="$tmp"
+  {
+    if [[ -f "$ENV_FILE" ]]; then
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "$key="* ]]; then
+          (( found )) && continue
+          found=1
+          line="$key=$value"
+        fi
+        printf '%s\n' "$line"
+      done < "$ENV_FILE"
+    fi
+    (( found )) || printf '%s=%s\n' "$key" "$value"
+  } > "$tmp"
+  cat "$tmp" > "$ENV_FILE"
+  rm -f "$tmp"
+  _WRITE_ENV_TMP=""
   WRITTEN_ENV+=("$key")
   printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
 }
 
 # set_secret NAME VALUE sets a GitHub Actions repo secret via gh. Falls back
-# to a warning (and records it) if gh is unavailable or unauthenticated.
+# to a warning (and records it) if gh is unavailable or unauthenticated. An
+# empty VALUE is never pushed: it would blank a live secret.
 set_secret() {
   local name="$1" value="$2"
+  if [[ -z "$value" ]]; then
+    SKIPPED+=("GitHub secret $name (empty value, not pushed)")
+    warn "skipped GitHub secret $name: empty value, not pushed"
+    return 0
+  fi
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     if printf '%s' "$value" | gh secret set "$name" >/dev/null 2>&1; then
       WRITTEN_SECRET+=("$name")
@@ -153,9 +229,15 @@ set_secret() {
   warn "skipped GitHub secret $name: gh not ready; set it later"
 }
 
-# set_var NAME VALUE sets a GitHub Actions repo variable (non-secret).
+# set_var NAME VALUE sets a GitHub Actions repo variable (non-secret). An
+# empty VALUE is never pushed.
 set_var() {
   local name="$1" value="$2"
+  if [[ -z "$value" ]]; then
+    SKIPPED+=("GitHub variable $name (empty value, not pushed)")
+    warn "skipped GitHub variable $name: empty value, not pushed"
+    return 0
+  fi
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     if gh variable set "$name" --body "$value" >/dev/null 2>&1; then
       printf '  %s✓ set%s GitHub variable %s\n' "$GREEN" "$RESET" "$name"

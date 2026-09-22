@@ -49,10 +49,21 @@ The words this repository uses, defined once. This describes Capstan itself; it 
 | Red at base | The evidence a slice's seam check failed before that slice started. Without it a criterion can pass by having always been true. |
 | Blocked by | The slices that must land before this one can be built or verified. An edge that only feels tidier is not one. |
 | Frontier | Every decision whose prerequisites are already settled: the questions askable now. |
-| Claim | `<working copy>/.capstan/effort/CLAIM.md`. Marks an effort as held, so a second Architect stops rather than starting. |
+| Claim | Holding an Effort: the Lock that enforces it and the Claim record beside it, `<working copy>/.capstan/effort/CLAIM.md`, that explains it. Taken, resumed, released and taken over through `capstan-claim`, never by hand. |
+| Lock | `<working copy>/.capstan/effort/.claim.lock/`, a directory taken with `mkdir` so exactly one session holds an Effort. Carries the Owner id. Enforcement, not a record. |
+| Owner id | The string naming who holds a Claim, printed by `acquire` and presented on every later write. Carried between runs in the gate briefs. Age never stands in for it. |
+| Takeover | Replacing a Lock's Owner id while naming the current one exactly. The operator's call; never authorised by a timestamp. |
+| Base commit | `base_commit` in the Claim record: the commit the Effort started from, written once at acquire and never moved. The baseline `verify` classifies a red check against. Unknown on an adopted older claim, and reported as degraded rather than invented. |
+| Checkpoint | `last_observed_head` in the Claim record: the commit the last run checked the repository against, moved at every gate. What re-reading the world diffs from. Never the Base commit. |
+| Verified commit | `verified_commit` in the Claim record: the commit the integration's checks last passed against. What the gate-3 brief names and what phase 4 checks `HEAD` against before anything ships. |
+| Drift | A change to the repository outside the Document home since the Verified commit, committed or not. Invalidates the verification; a change confined to the Document home does not. |
+| Builder limit | `capstan-max-builders`, default 3: Builders in flight at once inside one Effort. Enforced by `capstan-claim dispatch` from `builders_in_flight` in the Claim record. |
+| Fix-dispatch limit | `capstan-max-fix-dispatches`, default 5: Fix dispatches on one slice, or on the note, across every run of an Effort. Reaching it refuses the dispatch, keeps the count, and ends the run reporting what remains. |
+| Helper | One of the three executables in `skills/effort/bin/`, admitted per 0004: `capstan-claim`, `capstan-scratch-clean`, `capstan-tracker`. Does one deterministic thing when a skill calls it; judgement stays in the skill. |
+| Sync copy | A duplicate a sync service leaves beside the scratch, `effort 2`, `effort 3`, and so on. The only names `capstan-scratch-clean` deletes beside `effort` itself. |
 | Verify | Running the checks the repository declares against the merged result, and reporting what they showed. Never an exit code alone. |
 | Declared check | A check the repository itself declares, in a CI workflow, a task runner, a commit hook or a contributing guide. `verify` owns the order they are discovered in. A command an agent invents or runs ad hoc, a grep included, is not one. |
-| Vendored | A skill taken from an upstream project under its own licence, carrying a `CREDIT.md` that states every local change and how to refresh it. A vendored file is not edited to add Capstan's own content; that content goes in a Capstan-authored file instead. |
+| Vendored | A skill taken from an upstream project under its own licence, carrying a `CREDIT.md` that states every local change and how to refresh it. A vendored file is not edited to add Capstan's own content; that content goes in a Capstan-authored file instead. `walkthrough`'s library is the declared exception, forked per 0005 with its changes listed and tested. |
 | Axis | One of the two independent review questions: Standards (built right) and Spec (right thing). Never blended. |
 | Fixed point | The commit, branch or tag a review diffs against. Supplied by whoever dispatches, never guessed. |
 | `<working copy>` | The repository an effort's work lives in, established by absolute path at the Precondition and never assumed to be the session's own directory. The prefix that qualifies a scratch path, so an agent resolves it against that repository rather than wherever its session sits. |

@@ -1,0 +1,401 @@
+#!/usr/bin/env bash
+#
+# capstan-tracker: read a Capstan tracker off a GitHub Projects v2 board, parse
+# a tracker.md, or diff the two.
+#
+# A board read is complete or it is no read at all. `gh project item-list`
+# returns 30 items by default and says nothing when a board holds more, so this
+# reads with an explicit limit, checks what came back against the board's own
+# totalCount, and prints no rows unless the two agree. Rows are scoped to one
+# repository and keyed by effort and slice together, so two efforts that share
+# a slice name never collide.
+#
+# Needs only gh (or the binary named by --gh / $CAPSTAN_GH) plus awk, grep, sed
+# and sort. JSON is handled by gh's own --jq; nothing here shells out to jq.
+#
+# Exit codes: 0 ok, 1 unreachable, 2 incomplete, 3 invalid, 4 differences,
+# 64 usage.
+
+set -euo pipefail
+export LC_ALL=C
+
+TAB=$'\t'
+# The backticks are literal: the merge-commit comment format in TRACKER-GITHUB.md.
+# shellcheck disable=SC2016
+MERGE_RE='^merged in `[0-9a-f]{4,40}`$'
+ROW_HEADER="effort${TAB}slice${TAB}status${TAB}commit${TAB}issue${TAB}url${TAB}note"
+DIFF_HEADER="effort${TAB}slice${TAB}verdict"
+
+# One item-list call prints a header line, then one line per item, tab
+# separated. @tsv escapes tabs and newlines inside titles so a row is always
+# one line of seven fields.
+JQ_ITEMS='"#total\t\(.totalCount)\t\(.items | length)",
+  (.items[] | [
+    (.content.type // ""),
+    (.content.repository // ""),
+    (.content.number // ""),
+    (.content.url // ""),
+    (.milestone.title // ""),
+    (.content.title // .title // ""),
+    (."capstan Status" // "")
+  ] | @tsv)'
+
+# One line per comment body. Newlines inside a body are made visible so a body
+# that merely contains a conforming line does not read as a conforming comment;
+# a body that is exactly the merge-commit format comes through unchanged.
+JQ_COMMENTS='.[].body | gsub("\r"; "\\r") | gsub("\n"; "\\n")'
+
+usage() {
+  cat <<'EOF'
+usage:
+  capstan-tracker read  --owner O --repo R --project N [--with-commits]
+  capstan-tracker diff  --owner O --repo R --project N --tracker-md PATH
+  capstan-tracker parse --tracker-md PATH
+
+options:
+  --gh PATH        gh binary to run (default: $CAPSTAN_GH, else gh on PATH)
+  --with-commits   read: also read each merged row's merge commit from its issue
+  -h, --help       print this and exit
+
+output (stdout, tab-separated, header line first, sorted by effort then slice):
+  read, parse:  effort  slice  status  commit  issue  url  note
+  diff:         effort  slice  verdict
+                verdict is one of: same, status-changed FILE -> BOARD,
+                commit-changed FILE -> BOARD, board-only, file-only
+
+a summary goes to stderr; rows go to stdout only on exit 0 (or exit 4 for diff)
+
+exit codes:
+   0  read/parse: rows, or a genuine empty result; diff: no differences
+   1  unreachable: gh exited non-zero (a rate limit prints "unknown owner type")
+   2  incomplete: the board reports more items than three reads could fetch
+   3  invalid: a row failed validation, or a merged row's issue carries a
+      number of conforming merge comments other than one
+   4  diff: differences found (rows are still printed)
+  64  usage error, or the tracker.md path cannot be read
+EOF
+}
+
+die_usage() {
+  printf 'capstan-tracker: %s\n\n' "$*" >&2
+  usage >&2
+  exit 64
+}
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/capstan-tracker.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+
+CMD="${1:-}"
+[[ -n "$CMD" ]] || die_usage "missing command"
+shift
+case "$CMD" in
+  -h|--help) usage; exit 0 ;;
+  read|diff|parse) ;;
+  *) die_usage "unknown command: $CMD" ;;
+esac
+
+OWNER=""
+REPO=""
+PROJECT=""
+TRACKER_MD=""
+WITH_COMMITS=0
+GH="${CAPSTAN_GH:-gh}"
+
+need_value() { # option value
+  [[ -n "${2:-}" ]] || die_usage "$1 needs a value"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --owner)        need_value "$1" "${2:-}"; OWNER="$2"; shift 2 ;;
+    --repo)         need_value "$1" "${2:-}"; REPO="$2"; shift 2 ;;
+    --project)      need_value "$1" "${2:-}"; PROJECT="$2"; shift 2 ;;
+    --tracker-md)   need_value "$1" "${2:-}"; TRACKER_MD="$2"; shift 2 ;;
+    --gh)           need_value "$1" "${2:-}"; GH="$2"; shift 2 ;;
+    --with-commits) WITH_COMMITS=1; shift ;;
+    -h|--help)      usage; exit 0 ;;
+    *)              die_usage "unknown option: $1" ;;
+  esac
+done
+
+case "$CMD" in
+  read|diff)
+    [[ -n "$OWNER" ]] || die_usage "$CMD needs --owner"
+    [[ -n "$REPO" ]] || die_usage "$CMD needs --repo"
+    [[ -n "$PROJECT" ]] || die_usage "$CMD needs --project"
+    case "$PROJECT" in
+      ''|*[!0-9]*) die_usage "--project must be a number, got: $PROJECT" ;;
+    esac
+    ;;
+esac
+case "$CMD" in
+  diff|parse)
+    [[ -n "$TRACKER_MD" ]] || die_usage "$CMD needs --tracker-md"
+    [[ -r "$TRACKER_MD" ]] || die_usage "cannot read tracker.md at: $TRACKER_MD"
+    ;;
+esac
+[[ "$CMD" == diff ]] && WITH_COMMITS=1
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+is_number() {
+  case "${1:-}" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  return 0
+}
+
+# fail_invalid FILE: print the collected invalid: lines and stop with exit 3.
+fail_invalid() {
+  cat "$1" >&2
+  exit 3
+}
+
+# reject_duplicates ROWS BAD WHERE: an effort+slice key seen twice cannot be
+# diffed, so it is invalid on either side.
+reject_duplicates() {
+  cut -f1,2 "$1" | sort | uniq -d | awk -F '\t' -v where="$3" \
+    '{ print "invalid: " where " holds effort " $1 " slice " $2 " more than once" }' >> "$2"
+}
+
+sort_rows() {
+  sort -t "$TAB" -k1,1 -k2,2 "$1"
+}
+
+# ---------------------------------------------------------------------------
+# read
+# ---------------------------------------------------------------------------
+
+# Fetch one complete item list into $WORK/list.out, or exit 1 / 2.
+fetch_board() {
+  local attempt=1 limit=100 code header total read_n
+  while :; do
+    code=0
+    "$GH" project item-list "$PROJECT" --owner "$OWNER" --format json \
+      --limit "$limit" --jq "$JQ_ITEMS" \
+      < /dev/null > "$WORK/list.out" 2> "$WORK/list.err" || code=$?
+    if [[ $code -ne 0 ]]; then
+      printf 'unreachable: gh exited %d\n' "$code" >&2
+      cat "$WORK/list.err" >&2
+      exit 1
+    fi
+    header="$(head -n 1 "$WORK/list.out")"
+    total=""
+    read_n=""
+    case "$header" in
+      "#total${TAB}"*)
+        IFS="$TAB" read -r _ total read_n <<< "$header"
+        ;;
+    esac
+    if ! is_number "$total" || ! is_number "$read_n"; then
+      printf 'unreachable: gh exited 0 but printed no item-list header\n' >&2
+      cat "$WORK/list.err" >&2
+      exit 1
+    fi
+    BOARD_TOTAL=$total
+    BOARD_READ=$read_n
+    if [[ $read_n -ge $total ]]; then
+      return 0
+    fi
+    if [[ $attempt -ge 3 ]]; then
+      printf 'incomplete: board reports %d items, read %d\n' "$total" "$read_n" >&2
+      exit 2
+    fi
+    attempt=$((attempt + 1))
+    limit=$total
+  done
+}
+
+# Keep the Capstan rows of the configured repository; count what was skipped;
+# validate what was kept. Writes $WORK/kept and $WORK/counts, or exits 3.
+scope_and_validate() {
+  : > "$WORK/kept"
+  : > "$WORK/bad"
+  : > "$WORK/counts"
+  tail -n +2 "$WORK/list.out" | awk -F '\t' -v OFS='\t' \
+    -v repo="$OWNER/$REPO" -v kept="$WORK/kept" -v bad="$WORK/bad" -v counts="$WORK/counts" '
+    function reject(why) {
+      print "invalid: issue #" number " (effort \"" effort "\", slice \"" slice "\"): " why > bad
+    }
+    {
+      type = $1; repository = $2; number = $3; url = $4
+      effort = $5; slice = $6; status = $7
+      if (type != "Issue") { not_issue++; next }
+      if (repository != repo) { other_repo++; next }
+      if (status == "") { no_status++; next }
+      if (effort == "") { reject("no milestone"); next }
+      if (status != "planned" && status != "building" && status != "merged" && status != "dropped") {
+        reject("status \"" status "\" is not planned, building, merged or dropped"); next
+      }
+      print effort, slice, status, "", number, url, "" > kept
+      k++
+    }
+    END { print k + 0, other_repo + 0, not_issue + 0, no_status + 0 > counts }
+  '
+  reject_duplicates "$WORK/kept" "$WORK/bad" "the board"
+  [[ -s "$WORK/bad" ]] && fail_invalid "$WORK/bad"
+  return 0
+}
+
+# For every merged row, read the issue's comments and take the one conforming
+# merge commit. Writes $WORK/commits (issue, commit, note); exits 1 or 3.
+read_commits() {
+  local number code n_all n_ok commit note
+  : > "$WORK/commits"
+  : > "$WORK/bad"
+  awk -F '\t' '$3 == "merged" { print $5 }' "$WORK/kept" > "$WORK/merged"
+  while read -r number; do
+    code=0
+    "$GH" api "repos/$OWNER/$REPO/issues/$number/comments" --paginate --jq "$JQ_COMMENTS" \
+      < /dev/null > "$WORK/c.out" 2> "$WORK/c.err" || code=$?
+    if [[ $code -ne 0 ]]; then
+      printf 'unreachable: gh exited %d reading comments on issue #%s\n' "$code" "$number" >&2
+      cat "$WORK/c.err" >&2
+      exit 1
+    fi
+    n_all="$(awk 'END { print NR }' "$WORK/c.out")"
+    n_ok="$(grep -c -E "$MERGE_RE" "$WORK/c.out" || true)"
+    if [[ "$n_ok" -ne 1 ]]; then
+      printf 'invalid: issue #%s: %s conforming merge comments, expected exactly 1\n' \
+        "$number" "$n_ok" >> "$WORK/bad"
+      continue
+    fi
+    # shellcheck disable=SC2016
+    commit="$(grep -E "$MERGE_RE" "$WORK/c.out" | sed -E 's/^merged in `([0-9a-f]+)`$/\1/')"
+    note=""
+    if [[ $((n_all - n_ok)) -gt 0 ]]; then
+      note="other-comments=$((n_all - n_ok))"
+    fi
+    printf '%s\t%s\t%s\n' "$number" "$commit" "$note" >> "$WORK/commits"
+  done < "$WORK/merged"
+  [[ -s "$WORK/bad" ]] && fail_invalid "$WORK/bad"
+  awk -F '\t' -v OFS='\t' '
+    NR == FNR { commit[$1] = $2; note[$1] = $3; next }
+    $3 == "merged" { $4 = commit[$5]; $7 = note[$5] }
+    { print }
+  ' "$WORK/commits" "$WORK/kept" > "$WORK/kept.commits"
+  mv "$WORK/kept.commits" "$WORK/kept"
+}
+
+# do_read OUT: a complete, scoped, validated, sorted table in OUT (rows only).
+do_read() {
+  local k other_repo not_issue no_status summary
+  fetch_board
+  scope_and_validate
+  if [[ $WITH_COMMITS -eq 1 ]]; then
+    read_commits
+  fi
+  sort_rows "$WORK/kept" > "$1"
+  read -r k other_repo not_issue no_status < "$WORK/counts"
+  summary="$(printf 'board: %d items, read %d; capstan rows in %s/%s: %d; skipped: %d other repository, %d not an issue, %d no Capstan Status' \
+    "$BOARD_TOTAL" "$BOARD_READ" "$OWNER" "$REPO" "$k" "$other_repo" "$not_issue" "$no_status")"
+  if [[ $k -eq 0 ]]; then
+    summary="$summary; genuine empty result, nothing to migrate"
+  fi
+  printf '%s\n' "$summary" >&2
+}
+
+# ---------------------------------------------------------------------------
+# parse
+# ---------------------------------------------------------------------------
+
+# do_parse PATH OUT: the tracker.md table as a sorted row table in OUT.
+do_parse() {
+  : > "$WORK/pbad"
+  awk -F '|' -v OFS='\t' -v bad="$WORK/pbad" '
+    function trim(s) { sub(/^[ \t\r]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+    function reject(why) { print "invalid: line " NR ": " why ": " $0 > bad }
+    /^[ \t]*\|/ {
+      first = 2; last = NF
+      if (trim($NF) == "") last = NF - 1
+      n = last - first + 1
+      if (n < 1) next
+      for (i = 1; i <= n; i++) cell[i] = trim($(first + i - 1))
+      sep = 1
+      for (i = 1; i <= n; i++) if (cell[i] !~ /^:?-+:?$/) sep = 0
+      if (sep) next
+      if (n >= 2 && tolower(cell[1]) == "effort" && tolower(cell[2]) == "slice") next
+      if (n != 4) { reject("expected 4 cells, found " n); next }
+      if (cell[1] == "" || cell[2] == "") { reject("empty effort or slice"); next }
+      if (cell[3] != "planned" && cell[3] != "building" && cell[3] != "merged" && cell[3] != "dropped") {
+        reject("status \"" cell[3] "\" is not planned, building, merged or dropped"); next
+      }
+      print cell[1], cell[2], cell[3], cell[4], "", "", ""
+    }
+  ' "$1" > "$WORK/parsed"
+  reject_duplicates "$WORK/parsed" "$WORK/pbad" "$1"
+  [[ -s "$WORK/pbad" ]] && fail_invalid "$WORK/pbad"
+  sort_rows "$WORK/parsed" > "$2"
+}
+
+# ---------------------------------------------------------------------------
+# diff
+# ---------------------------------------------------------------------------
+
+# do_diff BOARD FILE OUT: one verdict per effort+slice key, sorted, in OUT.
+do_diff() {
+  awk -F '\t' -v OFS='\t' '
+    function same_commit(a, b) {
+      a = tolower(a); b = tolower(b)
+      if (a == "" || b == "") return 0
+      if (a == b) return 1
+      if (length(a) < 4 || length(b) < 4) return 0
+      if (length(a) < length(b)) return substr(b, 1, length(a)) == a
+      return substr(a, 1, length(b)) == b
+    }
+    NR == FNR { k = $1 SUBSEP $2; b_status[k] = $3; b_commit[k] = $4; keys[k] = 1; next }
+    { k = $1 SUBSEP $2; f_status[k] = $3; f_commit[k] = $4; keys[k] = 1 }
+    END {
+      for (k in keys) {
+        split(k, p, SUBSEP)
+        if (!(k in b_status)) v = "file-only"
+        else if (!(k in f_status)) v = "board-only"
+        else if (b_status[k] != f_status[k]) v = "status-changed " f_status[k] " -> " b_status[k]
+        else if (b_status[k] == "merged" && !same_commit(f_commit[k], b_commit[k]))
+          v = "commit-changed " f_commit[k] " -> " b_commit[k]
+        else v = "same"
+        print p[1], p[2], v
+      }
+    }
+  ' "$1" "$2" | sort_rows /dev/stdin > "$3"
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+case "$CMD" in
+  read)
+    do_read "$WORK/rows"
+    printf '%s\n' "$ROW_HEADER"
+    cat "$WORK/rows"
+    ;;
+  parse)
+    do_parse "$TRACKER_MD" "$WORK/rows"
+    printf '%s\n' "$ROW_HEADER"
+    cat "$WORK/rows"
+    ;;
+  diff)
+    do_read "$WORK/board"
+    do_parse "$TRACKER_MD" "$WORK/file"
+    do_diff "$WORK/board" "$WORK/file" "$WORK/verdicts"
+    printf '%s\n' "$DIFF_HEADER"
+    cat "$WORK/verdicts"
+    read -r n_same n_status n_commit n_board n_file < <(awk -F '\t' '
+      { split($3, a, " "); c[a[1]]++ }
+      END { print c["same"] + 0, c["status-changed"] + 0, c["commit-changed"] + 0, c["board-only"] + 0, c["file-only"] + 0 }
+    ' "$WORK/verdicts")
+    printf 'diff: %d keys; %d same, %d status-changed, %d commit-changed, %d board-only, %d file-only\n' \
+      "$((n_same + n_status + n_commit + n_board + n_file))" \
+      "$n_same" "$n_status" "$n_commit" "$n_board" "$n_file" >&2
+    if [[ $((n_status + n_commit + n_board + n_file)) -gt 0 ]]; then
+      exit 4
+    fi
+    ;;
+esac

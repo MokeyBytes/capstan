@@ -7,7 +7,7 @@ description: Build the one-time script that carries the operator through a manua
 
 An Architect reaches for this the moment an effort hits a step only a person can do: a click sequence in someone else's console, a physical action, a change to an account that lives outside this repository. Pasting a paragraph of instructions and hoping the operator keeps the order straight, catches every value, and knows which parts are secret is what this discipline replaces with a single script that does that work for them.
 
-`template.sh` in this folder supplies the machinery behind that script. See [CREDIT.md](CREDIT.md) for where it came from.
+`template.sh` in this folder supplies the machinery behind that script. See [CREDIT.md](CREDIT.md) for where it came from and what Capstan changed in it.
 
 ## Read the procedure before writing a stage
 
@@ -25,8 +25,8 @@ Everything above the `STAGES` marker in `template.sh` is fixed. Never edit it. T
 
 What varies stage to stage is which calls it reaches for:
 
-- `ask` for a value the operator can read straight off a screen; `ask_secret` when it must never be visible.
-- `write_env` when a value belongs in the local `.env`; `set_secret` or `set_var` when it belongs to a repository hosted elsewhere.
+- `ask` for a value the operator can read straight off a screen; `ask_secret` when it must never be visible. Enter keeps a value already in `.env`; Enter with nothing there asks before accepting an empty value, so an empty result is always one the operator chose.
+- `write_env` when a value belongs in the local `.env`; `set_secret` or `set_var` when it belongs to a repository hosted elsewhere. A key is a variable name, `[A-Za-z_][A-Za-z0-9_]*`, and a value is one line: the library refuses a name outside that shape and a value holding a line break before it touches the file, so a stage that needs a multi-line value, a PEM key say, hands the operator a path to save it at rather than a value to paste.
 - `pause` for a step with nothing to capture; `confirm` as a yes/no gate ahead of something risky.
 - `open_url` right before the `ask` or `ask_secret` that captures what the opened page shows, so the operator lands on the page before being asked for the value it produces. Open it after the ask only when the value being asked for is itself what unlocks the page, such as a link that arrives by email.
 
@@ -40,7 +40,7 @@ Before any stage calls `write_env` on a secret, confirm the working directory's 
 
 That confirm names the target, and the target it names has to be the one the script will actually use, not one the author typed. `set_secret` and `set_var` write to whatever `gh` resolves from the operator's working directory at run time, which is not necessarily the repository an author had in mind while writing the stage. Print the resolved target before asking, for example with `gh repo view --json nameWithOwner -q .nameWithOwner`, so the question reads "Push API_KEY to acme/widgets?" using the name the script just looked up, not a literal it was told to say. A prompt naming the wrong repository is worse than a prompt naming none, since it reads as a check that already happened. Secrets and anything a third party will see are the operator's call, every time, never the agent's to wave through on the script's behalf.
 
-The agent that authors a walkthrough never runs it. With no terminal attached, every `read` in the library returns empty, so `write_env` writes a blank value, `set_secret` overwrites a live credential with nothing, and the closing summary still prints success and exits clean. None of that surfaces until a person is looking at a broken result. Trace the script by reading it. The operator is the one who executes it.
+The agent that authors a walkthrough never runs it. With no terminal attached, the first prompt finds its input closed, and the library stops there, saying so and listing what was already written, rather than reading silence as a value. That is the guard, not a way to test the script: a run that stops at stage one proves nothing about stage two. Trace the script by reading it. The operator is the one who executes it.
 
 ## Hand it off
 
