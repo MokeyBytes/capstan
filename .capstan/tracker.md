@@ -29,10 +29,10 @@ capstan_type: tracker
 | reverse-migration | reverse-docs | merged | 1e8b26f |
 | reverse-migration | reverse-step | merged | 6a50c2d |
 | run-vocabulary | caller-neutral-stop | merged | 00365f8 |
-| soak | empty-vs-unread | building |  |
-| soak | surface-unreachable | building |  |
-| soak | vault-write-warning | building |  |
-| soak | verify-fix-licence | building |  |
+| soak | empty-vs-unread | merged | 2219b7e |
+| soak | surface-unreachable | merged | 0d7dede |
+| soak | vault-write-warning | merged | b78e1d1 |
+| soak | verify-fix-licence | merged | 5452e55 |
 | standards-bullets | standards-audit | merged | 8bca8cf |
 | sync-hazard | sibling-delete | merged | 924eeb0 |
 | sync-hazard | sync-doc | merged | 60a3001 |
