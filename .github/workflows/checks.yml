@@ -1,0 +1,24 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck and jq
+        run: |
+          for tool in shellcheck jq; do
+            if ! command -v "$tool" >/dev/null; then
+              if [ "$RUNNER_OS" = "macOS" ]; then brew install "$tool"; else sudo apt-get install -y "$tool"; fi
+            fi
+          done
+      - name: Run the checks
+        run: bash tests/run.sh
