@@ -1,7 +1,7 @@
 {
   "name": "capstan",
   "displayName": "Capstan",
-  "version": "2.25.0",
+  "version": "2.25.1",
   "description": "For work you want done properly rather than quickly. Plans before building, builds in reviewable pieces, and reviews independently. Holds the work steady until you say go.",
   "author": {
     "name": "BytesNation",
