@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
-# For every relative markdown link and #anchor under README.md, DESIGN.md,
-# docs/, examples/, skills/, agents/, plugins/ and bench/: the target file
-# (or directory) exists, and any #anchor matches a heading in that target
-# under GitHub's own slug rule (lowercase, punctuation dropped, spaces to
-# hyphens, duplicates suffixed -1, -2, ...). Links inside fenced code blocks
-# are sample text, not real links, and are skipped on both sides.
+# For every relative markdown link, reference-style link definition, and
+# #anchor under README.md, DESIGN.md, docs/, examples/, skills/, agents/,
+# plugins/, bench/, .capstan/ and CLAUDE.md: the target file (or directory)
+# exists, and any #anchor matches a heading in that target under an
+# ASCII-only slug rule (lowercase, keep a-z0-9_-, spaces to hyphens,
+# everything else dropped, duplicates suffixed -1, -2, ...), not GitHub's
+# fuller rule. Links inside fenced code blocks are sample text, not real
+# links, and are skipped on both sides.
 # shellcheck source=tests/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-SCAN_ROOTS=(README.md DESIGN.md docs skills agents examples plugins bench)
+SCAN_ROOTS=(README.md DESIGN.md docs skills agents examples plugins bench .capstan CLAUDE.md)
+
+# missing_scan_roots ROOT... prints, one per line, any root that does not
+# exist under REPO_ROOT. A renamed or deleted root should fail loudly
+# rather than scan silently less than it claims to.
+missing_scan_roots() {
+  local root
+  for root in "$@"; do
+    [[ -e "$REPO_ROOT/$root" ]] || printf '%s\n' "$root"
+  done
+}
 
 # heading_slugs FILE prints one GitHub-style anchor slug per line, in
 # document order. ATX headings only; a line inside a fenced code block is
@@ -35,9 +47,9 @@ heading_slugs() {
   ' "$1"
 }
 
-# extract_links FILE prints "<line>\t<target>" for every markdown link
-# outside a fenced code block, in document order. Several links on one line
-# each get their own output line.
+# extract_links FILE prints "<line>\t<target>" for every markdown link and
+# reference-style link definition outside a fenced code block, in document
+# order. Several links on one line each get their own output line.
 extract_links() {
   awk '
     /^```/ { infence = !infence; next }
@@ -49,6 +61,11 @@ extract_links() {
         target = substr(seg, 3, length(seg) - 3)
         print FNR "\t" target
         line = substr(line, RSTART + RLENGTH)
+      }
+      if (match($0, /^\[[^]]+\]:[ \t]*[^ \t]+/)) {
+        seg = substr($0, RSTART, RLENGTH)
+        sub(/^\[[^]]+\]:[ \t]*/, "", seg)
+        print FNR "\t" seg
       }
     }
   ' "$1"
@@ -163,8 +180,47 @@ test_a_link_inside_a_fenced_code_block_is_not_checked() {
   assert_eq "" "$out" "a link-shaped example inside a code fence should not be extracted"
 }
 
+test_extracts_a_reference_style_link_definition() {
+  local dir out
+  dir=$(tmpdir)
+  printf '# Title\n\nSee [it][ref].\n\n[ref]: nope.md\n' > "$dir/a.md"
+  out=$(extract_links "$dir/a.md")
+  assert_contains "$out" "nope.md" "a reference-style link definition should surface its target"
+}
+
+test_a_reference_style_definition_inside_a_fenced_code_block_is_not_extracted() {
+  local dir out fence
+  dir=$(tmpdir)
+  fence='```'
+  printf '# Title\n\n%smarkdown\n[ref]: nope.md\n%s\n' "$fence" "$fence" > "$dir/a.md"
+  out=$(extract_links "$dir/a.md")
+  assert_eq "" "$out" "a reference-style definition inside a code fence should not be extracted"
+}
+
+test_flags_a_broken_reference_style_link() {
+  local dir out
+  dir=$(tmpdir)
+  printf '# Title\n\nSee [it][ref].\n\n[ref]: nope.md\n' > "$dir/a.md"
+  out=$(check_link "$dir/a.md" "nope.md")
+  assert_contains "$out" "missing target" "a reference-style link resolving to a missing file should be flagged"
+}
+
+test_missing_scan_roots_reports_an_absent_root() {
+  local dir out
+  dir=$(tmpdir)
+  mkdir -p "$dir/docs"
+  out=$(REPO_ROOT="$dir" missing_scan_roots docs nope-dir)
+  assert_contains "$out" "nope-dir" "an absent scan root should be reported"
+  assert_not_contains "$out" "docs" "an existing scan root should not be reported"
+}
+
 test_repo_links_all_resolve() {
-  local broken="" f target lineno reason abs
+  local broken="" f target lineno reason abs missing
+  missing="$(missing_scan_roots "${SCAN_ROOTS[@]}")"
+  if [[ -n "$missing" ]]; then
+    fail "missing scan root(s): $(printf '%s' "$missing" | tr '\n' ' ')"
+    return
+  fi
   while IFS= read -r f; do
     abs="$REPO_ROOT/$f"
     while IFS=$'\t' read -r lineno target; do
@@ -177,7 +233,7 @@ test_repo_links_all_resolve() {
         broken="${broken}${f}:${lineno}: ${reason}"$'\n'
       fi
     done < <(extract_links "$abs")
-  done < <(cd "$REPO_ROOT" && find "${SCAN_ROOTS[@]}" -type f -name '*.md' 2>/dev/null | sort)
+  done < <(cd "$REPO_ROOT" && find "${SCAN_ROOTS[@]}" -type f -name '*.md' | sort)
   [[ -z "$broken" ]] || fail "$broken"
 }
 

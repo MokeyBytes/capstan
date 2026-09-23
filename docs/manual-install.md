@@ -29,40 +29,40 @@ skills/effort/
   PHASE-2-PLAN.md
   PHASE-3-BUILD.md
   PHASE-4-DELIVER.md
-  bin/                  capstan-claim, capstan-scratch-clean, capstan-log: called by the phases above and by setup and verify
+  bin/                  capstan-claim, capstan-scratch-clean, capstan-log: called by the phases above and by verify
 
 skills/writing-for-agents/
   SKILL.md
   SKILL-MECHANICS.md    frontmatter, invocation, router skills
   AUDIT.md              the editing pass to run against a target document
-  LICENSE, CREDIT.md    upstream is MIT, see the licence section
+  LICENSE, CREDIT.md    upstream is MIT, see README.md's credits
 
 skills/walkthrough/
   SKILL.md              identity, how to author a stage, the two guards before a write leaves the machine
   template.sh           the library, forked from upstream; CREDIT.md lists every change
-  LICENSE, CREDIT.md    upstream is MIT, see the licence section
+  LICENSE, CREDIT.md    upstream is MIT, see README.md's credits
 
 skills/codebase-design/
   SKILL.md              the vocabulary and its principles
   DEEPENING.md          dependency categories, seam discipline, replace-don't-layer testing
   DESIGN-IT-TWICE.md    parallel sub-agents designing one interface several ways
-  LICENSE, CREDIT.md    upstream is MIT, see the licence section
+  LICENSE, CREDIT.md    upstream is MIT, see README.md's credits
 
 skills/diagnosing-bugs/
   SKILL.md              vendored, three repointed lines
-  LICENSE, CREDIT.md    upstream is MIT, see the licence section
+  LICENSE, CREDIT.md    upstream is MIT, see README.md's credits
 
 skills/to-questionnaire/
   SKILL.md              vendored, two local changes
-  LICENSE, CREDIT.md    upstream is MIT, see the licence section
+  LICENSE, CREDIT.md    upstream is MIT, see README.md's credits
 
 skills/resolving-merge-conflicts/
   SKILL.md              vendored, two local changes
-  LICENSE, CREDIT.md    upstream is MIT, see the licence section
+  LICENSE, CREDIT.md    upstream is MIT, see README.md's credits
 
 skills/unslop/
   SKILL.md              vendored, two local changes
-  LICENSE, CREDIT.md    upstream is MIT, see the licence section
+  LICENSE, CREDIT.md    upstream is MIT, see README.md's credits
 ```
 
 `skills/quick/` and every other skill not listed above is a lone `SKILL.md`: copy the file and it works.

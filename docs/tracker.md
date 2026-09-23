@@ -12,9 +12,9 @@ The board is a second plugin, `capstan-board`, not part of core:
 claude plugin install capstan-board@bytesnation
 ```
 
-Restart Claude Code, then run `/capstan-board:setup` in the repository. It asks for the GitHub project number, checks the token can reach Projects v2, and hands you to a walkthrough for `gh auth refresh -s project` if it can't. It writes `capstan-tracker` only once you approve the migration.
+Restart Claude Code, then run `/capstan-board:setup` in the repository. It asks for the GitHub project number, checks the token can reach Projects v2, and hands you to a walkthrough for `gh auth refresh -s project` if it can't. When a `tracker.md` already holds rows, it writes `capstan-tracker` once you approve the migration; with no `tracker.md` yet, it writes the key straight away.
 
-`capstan-board` is a plugin-install-only feature. There is no manual-install form: a `tracker` skill copied under `~/.claude/skills/` would collide with core's own `setup` skill sitting there under the same name, and there is no `capstan-board@bytesnation` namespace to invoke without the plugin. See [manual install](manual-install.md) for what a manual install does carry.
+`capstan-board` is a plugin-install-only feature. There is no manual-install form: the board's `setup` skill, copied under `~/.claude/skills/`, would collide with core's `setup`, and there is no `capstan-board@bytesnation` namespace to invoke without the plugin. See [manual install](manual-install.md) for what a manual install does carry.
 
 If `capstan-tracker` names a GitHub surface and the plugin is not installed, `effort` stops before the interview rather than guessing:
 
@@ -37,7 +37,7 @@ Four things worth knowing before you turn this on:
 - **A public repository asks for confirmation on every write.** Every write to the board there is third-party-visible, so the operator confirms it, the same as any other third-party-visible action; a private repository writes unattended, the same as `tracker.md` always has. The tracker is written on every slice transition, so this is the cost that changes daily operation most.
 - **GitHub unreachable stops the run.** No retry, no backoff, no bounded wait. A rate limit and an expired token end it the same way.
 - **Reading the full tracker costs more.** `tracker.md` is one file read. A board reconstructs the effort, the slice and the status in one call, but the merge commit lives in a comment on each issue, so a full read costs one call plus one more per merged slice. The read is complete or refused: it checks what came back against the count the board reports, and a board it cannot read whole stops the run rather than passing off part of it as all of it.
-- **Moving onto GitHub deletes your `tracker.md`.** Choosing GitHub on a project that already has a `tracker.md` carries every row onto the board as an issue, then deletes the file once a read of the board back matches it row for row, status and merge commit included. `/capstan-board:setup` describes the batch first, how many rows and how many milestones, and asks for one approval covering the whole thing, before either key is written, so refusing writes no key and leaves the rows where they are. That delete needs the operator's approval on a public repository and a private one alike; the per-write confirmation above is the only part that depends on whether the repository is public.
+- **Moving onto GitHub deletes your `tracker.md`.** Choosing GitHub on a project that already has a `tracker.md` carries every row onto the board as an issue, then deletes the file once a read of the board back matches it row for row, status and merge commit included. `/capstan-board:setup` describes the batch first, how many rows and how many milestones, and asks for one approval covering the whole thing, before `capstan-tracker` is written, so refusing writes no key and leaves the rows where they are. That delete needs the operator's approval on a public repository and a private one alike; the per-write confirmation above is the only part that depends on whether the repository is public.
 
 ## Moving back
 

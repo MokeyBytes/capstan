@@ -13,13 +13,19 @@ Leave the `/plugin` auto-update toggle off, the same as for any third-party mark
 
 The GitHub Projects v2 tracker surface is no longer part of core. It is a second plugin, `capstan-board`, installed and configured separately. See [tracker surface](tracker.md) for what it costs and how to install it.
 
-If your project's `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before running an effort on 3.0.0. If you upgrade core first and run an effort anyway, it stops before the interview rather than guessing which surface holds slice state:
+If your project's `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before running an effort or a quick on 3.0.0. If you upgrade core first and run one anyway, it stops before the interview rather than guessing which surface holds slice state:
 
 ```
 surface not installed: install capstan-board@bytesnation
 ```
 
 Install the plugin, reload plugins, and re-run the phase that stopped. A project that has never set `capstan-tracker` sees no change: `tracker.md` in the document home works exactly as it always has.
+
+Once installed, `capstan-board` upgrades the same way as core:
+
+```bash
+claude plugin update capstan-board@bytesnation
+```
 
 ## Moving the marketplace to a different address
 

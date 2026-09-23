@@ -7,7 +7,7 @@ The document home is the one configured root Capstan resolves every path to its 
 ```
 .capstan/
   CONTEXT.md      one line per term. committed. edited in place.
-  decisions.md    one line per decision, plus the newest rows. committed.
+  decisions.md    open, assumed and unformed rows, plus the newest 50. committed.
   decisions/      a full record, only when one is earned. committed.
     archive/      rows rotated out of decisions.md, one append-only file per rotation. never edited.
   tracker.md      one row per slice: effort, slice, status, merge commit. committed. absent under a GitHub tracker.
