@@ -14,19 +14,23 @@
 # Pass several session paths in one call to dedupe across all of them: a
 # later session's opening turns can be a copy of an earlier one's, the way
 # `/branch` and `--fork-session` write them, and counting both copies would
-# double the total.
+# double the total. Each argument still gets its own first_timestamp and
+# last_timestamp line in the output, counted only from the turns kept for
+# that argument. A copied turn is credited to whichever argument first
+# carries it, so a forked file's own span never includes time that already
+# belongs to the session it was forked from.
 #
 # Only `type=="assistant"` lines count. A model of `<synthetic>` is skipped:
 # it is a placeholder line, not a real model call. One API turn can be split
 # across several JSONL lines that share one message.id. In a subagent
 # transcript, an earlier line of a split turn carries a partial output
-# count and the final line carries the turn's completed usage. `stop_reason`
-# can appear on more than one of those lines, or on none of them, so it
-# marks a line rather than counting how many lines carry it. This script
-# keeps, per message.id, the usage from the latest-timestamped line that
-# carries `stop_reason`, and falls back to the maximum of each usage field
-# across the group for a turn that never completed (no line carries
-# `stop_reason` at all). The timestamp kept is the group's latest line.
+# count and the final line carries the turn's completed usage. One turn can
+# carry `stop_reason` on several lines with identical usage, or on none.
+# This script keeps, per message.id, the usage from the latest-timestamped
+# line that carries `stop_reason`, and falls back to the maximum of each
+# usage field across the group for a turn that never completed (no line
+# carries `stop_reason` at all). The timestamp kept is the group's latest
+# line.
 #
 # Pricing comes from bench/pricing.tsv next to this script's bench/, or from
 # the file named by SESSION_USAGE_PRICING when that is set. A model absent
@@ -34,6 +38,13 @@
 # model present in the pricing file with one rate left blank is priced on
 # its known components and reported as partial when the session actually
 # used the unpriced component.
+#
+# A turn is also marked partial, naming why, when any of its lines carries
+# `usage.speed` set to something other than "standard", `usage.inference_geo`
+# set to "us", or an `usage.iterations` array whose summed token fields
+# disagree with the turn's own top-level usage. None of those change the
+# token counts or the price this script applies; they mark the total as
+# needing a second look rather than silently pricing it as if none applied.
 #
 # Exit codes:
 #   0  done
@@ -60,12 +71,18 @@ usage() {
 [[ $# -ge 1 ]] || usage
 command -v jq >/dev/null 2>&1 || die 2 "jq is required and was not found on PATH"
 
-# add_session_files INPUT appends INPUT's main transcript and its
-# subagents/agent-*.jsonl files to the shared `files` array. Called once
-# per argument, so several session paths accumulate into one `files` list
-# that the dedupe pass below treats as a single session.
+# add_session_files INPUT ARGIDX appends INPUT's main transcript and its
+# subagents/agent-*.jsonl files to the shared `files` array, tagging each
+# with ARGIDX in the parallel `file_args` array, and records INPUT's
+# session id in `arg_labels[ARGIDX]`. Called once per argument, so several
+# session paths accumulate into one `files` list that the dedupe pass
+# below treats as a single session, while ARGIDX still lets the output
+# report each argument's own span under its session id, the same id
+# whether the argument named the session's .jsonl file or its sibling
+# directory. Dies naming INPUT when it contributes no file at all, rather
+# than letting it drop out of the total silently.
 add_session_files() {
-  local input="$1" session_dir session_id main main_dir f
+  local input="$1" argidx="$2" session_dir session_id main main_dir f added=0
   if [[ -d "$input" ]]; then
     session_dir=$(cd "$input" && pwd)
     session_id=$(basename "$session_dir")
@@ -78,19 +95,32 @@ add_session_files() {
   else
     die 2 "no such file or directory: $input"
   fi
-  [[ -f "$main" ]] && files+=("$main")
+  arg_labels[argidx]="$session_id"
+  if [[ -f "$main" ]]; then
+    files+=("$main")
+    file_args+=("$argidx")
+    added=1
+  fi
   if [[ -d "$session_dir/subagents" ]]; then
     for f in "$session_dir"/subagents/agent-*.jsonl; do
-      [[ -e "$f" ]] && files+=("$f")
+      if [[ -e "$f" ]]; then
+        files+=("$f")
+        file_args+=("$argidx")
+        added=1
+      fi
     done
   fi
+  [[ $added -eq 1 ]] || die 2 "no transcript found for $input (looked for a main .jsonl file and a subagents/agent-*.jsonl directory next to it)"
 }
 
 files=()
+file_args=()
+arg_labels=()
+argidx=0
 for input in "$@"; do
-  add_session_files "$input"
+  add_session_files "$input" "$argidx"
+  argidx=$((argidx + 1))
 done
-[[ ${#files[@]} -gt 0 ]] || die 2 "no transcript found for $* (looked for a main .jsonl file and a subagents/agent-*.jsonl directory next to each)"
 
 bin_dir=$(cd "$(dirname "$0")" && pwd)
 pricing="${SESSION_USAGE_PRICING:-$bin_dir/../pricing.tsv}"
@@ -136,17 +166,42 @@ input_line_number as $lineno
         elif ($obj.message.usage.cache_creation.ephemeral_1h_input_tokens == null) then
           "ERR\t\($lineno)\tassistant line missing message.usage.cache_creation.ephemeral_1h_input_tokens"
         else
-          "OK\t" + ({
-            id: $obj.message.id,
-            model: $obj.message.model,
-            ts: ($obj.timestamp // null),
-            stop_reason: ($obj.message.stop_reason // null),
-            input: $obj.message.usage.input_tokens,
-            output: $obj.message.usage.output_tokens,
-            cw5m: $obj.message.usage.cache_creation.ephemeral_5m_input_tokens,
-            cw1h: $obj.message.usage.cache_creation.ephemeral_1h_input_tokens,
-            cread: $obj.message.usage.cache_read_input_tokens
-          } | tojson)
+          ( ($obj.message.usage.speed // null) as $speed
+          | ($obj.message.usage.inference_geo // null) as $geo
+          | ($obj.message.usage.iterations // []) as $iters
+          | (if ($iters | length) > 0 then
+               ( ($iters | map(.usage.input_tokens // 0) | add) as $isum_in
+               | ($iters | map(.usage.output_tokens // 0) | add) as $isum_out
+               | ($iters | map(.usage.cache_read_input_tokens // 0) | add) as $isum_cread
+               | ($iters | map(.usage.cache_creation.ephemeral_5m_input_tokens // 0) | add) as $isum_cw5m
+               | ($iters | map(.usage.cache_creation.ephemeral_1h_input_tokens // 0) | add) as $isum_cw1h
+               | ($isum_in != $obj.message.usage.input_tokens)
+                 or ($isum_out != $obj.message.usage.output_tokens)
+                 or ($isum_cread != $obj.message.usage.cache_read_input_tokens)
+                 or ($isum_cw5m != $obj.message.usage.cache_creation.ephemeral_5m_input_tokens)
+                 or ($isum_cw1h != $obj.message.usage.cache_creation.ephemeral_1h_input_tokens)
+               )
+             else false
+             end) as $iter_mismatch
+          | ([
+              (if ($speed != null and $speed != "standard") then "fast mode" else empty end),
+              (if $geo == "us" then "US-only inference" else empty end),
+              (if $iter_mismatch then "iterations disagree" else empty end)
+            ]) as $flags
+          | "OK\t" + ({
+              id: $obj.message.id,
+              model: $obj.message.model,
+              ts: ($obj.timestamp // null),
+              stop_reason: ($obj.message.stop_reason // null),
+              argidx: $argidx,
+              flags: $flags,
+              input: $obj.message.usage.input_tokens,
+              output: $obj.message.usage.output_tokens,
+              cw5m: $obj.message.usage.cache_creation.ephemeral_5m_input_tokens,
+              cw1h: $obj.message.usage.cache_creation.ephemeral_1h_input_tokens,
+              cread: $obj.message.usage.cache_read_input_tokens
+            } | tojson)
+          )
         end
     ) catch "ERR\t\($lineno)\tnot a valid JSON line"
   end
@@ -154,7 +209,9 @@ input_line_number as $lineno
 
 padded="$tmp/padded.jsonl"
 lines="$tmp/lines"
-for f in "${files[@]}"; do
+for i in "${!files[@]}"; do
+  f="${files[$i]}"
+  fargidx="${file_args[$i]}"
   # A process substitution here would hide jq's exit status from `set -e`
   # and from the `|| die` below, so an unreadable file would print nothing
   # and the script would exit 0 with a total that silently drops that
@@ -164,7 +221,7 @@ for f in "${files[@]}"; do
   # final line by one.
   cat "$f" > "$padded" 2>/dev/null || die 1 "$f: could not be read"
   printf '\n' >> "$padded"
-  jq -R -r "$LINE_FILTER" "$padded" > "$lines" || die 1 "$f: could not be read"
+  jq -R -r --argjson argidx "$fargidx" "$LINE_FILTER" "$padded" > "$lines" || die 1 "$f: could not be read"
   while IFS= read -r out; do
     case "$out" in
       SKIP) ;;
@@ -211,6 +268,8 @@ def parseprice: if . == "" then null else tonumber end;
         id: $g[0].id,
         model: $g[0].model,
         ts: ($g | map(.ts) | map(notnull) | sort | last // null),
+        owner: ($g | map(.argidx) | min),
+        flags: ($g | map(.flags) | add | unique),
         input:  (if $stop != null then $stop.input  else ($g | map(.input)  | max) end),
         output: (if $stop != null then $stop.output else ($g | map(.output) | max) end),
         cw5m:   (if $stop != null then $stop.cw5m   else ($g | map(.cw5m)   | max) end),
@@ -219,13 +278,19 @@ def parseprice: if . == "" then null else tonumber end;
       }
   )) as $deduped
 | ($deduped | map(.ts) | map(notnull) | sort) as $ts
+| ($deduped | group_by(.owner) | map({
+    owner: .[0].owner,
+    first_ts: (map(.ts) | map(notnull) | sort | first // null),
+    last_ts: (map(.ts) | map(notnull) | sort | last // null)
+  }) | map(. + {arg: $arg_labels[.owner]})) as $arg_spans
 | ($deduped | group_by(.model) | map({
     model: .[0].model,
     input: (map(.input) | add),
     output: (map(.output) | add),
     cw5m: (map(.cw5m) | add),
     cw1h: (map(.cw1h) | add),
-    cread: (map(.cread) | add)
+    cread: (map(.cread) | add),
+    note_reasons: (map(.flags) | add | unique)
   })) as $sums
 | ($sums | map(
     . as $r
@@ -251,6 +316,7 @@ def parseprice: if . == "" then null else tonumber end;
   )) as $priced
 | {
     rows: $priced,
+    arg_spans: $arg_spans,
     total_input: ($sums | map(.input) | add // 0),
     total_output: ($sums | map(.output) | add // 0),
     total_cw5m: ($sums | map(.cw5m) | add // 0),
@@ -263,6 +329,10 @@ def parseprice: if . == "" then null else tonumber end;
       | map(select(.fully_unpriced | not) | select((.partial_fields | length) > 0)
           | . as $row | ($row.partial_fields | map(. + " unpriced for " + $row.model)))
       | flatten),
+    flag_notes: ($priced
+      | map(select(.fully_unpriced | not) | select((.note_reasons | length) > 0)
+          | . as $row | ($row.note_reasons | map(. + " for " + $row.model)))
+      | flatten),
     first_ts: ($ts[0] // null),
     last_ts: ($ts[-1] // null)
   }
@@ -271,25 +341,30 @@ def parseprice: if . == "" then null else tonumber end;
 # shellcheck disable=SC2016
 FORMAT='
 def rowcost:
-  if .fully_unpriced then "unpriced"
-  elif (.partial_fields | length) > 0 then
-    (.cost | tostring) + " (partial: " + (.partial_fields | join(",")) + " unpriced)"
-  else (.cost | tostring)
-  end;
+  (.partial_fields | map(. + " unpriced")) as $pf
+  | ($pf + .note_reasons) as $notes
+  | if .fully_unpriced then "unpriced"
+    elif ($notes | length) > 0 then
+      (.cost | tostring) + " (partial: " + ($notes | join("; ")) + ")"
+    else (.cost | tostring)
+    end;
 (.rows[] | [.model, (.input|tostring), (.output|tostring), (.cw5m|tostring), (.cw1h|tostring), (.cread|tostring), rowcost]),
 (["TOTAL", (.total_input|tostring), (.total_output|tostring), (.total_cw5m|tostring), (.total_cw1h|tostring), (.total_cread|tostring),
    (if .all_unpriced then "unpriced"
-    elif (.unpriced_models|length) > 0 or (.partial_notes|length) > 0 then
+    elif (.unpriced_models|length) > 0 or (.partial_notes|length) > 0 or (.flag_notes|length) > 0 then
       (.total_cost|tostring) + " (partial: " +
         (( (if (.unpriced_models|length) > 0 then ["unpriced " + (.unpriced_models|join(","))] else [] end)
-           + .partial_notes)
+           + .partial_notes + .flag_notes)
          | join("; ")) + ")"
     else (.total_cost|tostring)
     end)]),
-(["first_timestamp", (.first_ts // "none")]),
-(["last_timestamp", (.last_ts // "none")])
+(.arg_spans[] | (
+   ["first_timestamp", .arg, (.first_ts // "none")],
+   ["last_timestamp", .arg, (.last_ts // "none")]
+ ))
 | @tsv
 '
 
 printf 'model\tinput_tokens\toutput_tokens\tcache_write_5m_tokens\tcache_write_1h_tokens\tcache_read_tokens\tcost_usd\n'
-jq -n --slurpfile records "$records" --arg pricing_text "$(cat "$pricing")" "$AGG" | jq -r "$FORMAT"
+arg_labels_json=$(printf '%s\n' "${arg_labels[@]}" | jq -R . | jq -s .)
+jq -n --slurpfile records "$records" --arg pricing_text "$(cat "$pricing")" --argjson arg_labels "$arg_labels_json" "$AGG" | jq -r "$FORMAT"

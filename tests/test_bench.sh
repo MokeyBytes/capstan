@@ -83,8 +83,24 @@ test_session_dir_and_session_jsonl_paths_agree() {
 test_first_and_last_timestamp_span_the_subagent() {
   local out
   out=$("$SESSION_USAGE" "$FIXTURES/ses0001.jsonl")
-  assert_contains "$out" "$(printf 'first_timestamp\t2026-09-20T10:00:00.000Z')"
-  assert_contains "$out" "$(printf 'last_timestamp\t2026-09-20T10:11:02.000Z')" "the subagent's split turn's last line is the latest timestamp in the session"
+  assert_contains "$out" "$(printf 'first_timestamp\t%s\t2026-09-20T10:00:00.000Z' "ses0001")"
+  assert_contains "$out" "$(printf 'last_timestamp\t%s\t2026-09-20T10:11:02.000Z' "ses0001")" "the subagent's split turn's last line is the latest timestamp in the session"
+}
+
+test_each_argument_gets_its_own_span_so_a_forked_files_time_is_not_doubled() {
+  # ses0002.jsonl repeats ses0001.jsonl's msg_fixtureA turn verbatim, the way
+  # /branch and --fork-session copy a session's opening turns into a new
+  # file. Passed together, ses0001 keeps its own natural span, 10:00:00 to
+  # 10:11:02, since it is the first argument that carries msg_fixtureA.
+  # ses0002's own span must then start at msg_fixtureC, its one turn that
+  # is not a copy, rather than at 10:00:00 again. Summing the two spans
+  # must not count msg_fixtureA's slice of time twice.
+  local out
+  out=$("$SESSION_USAGE" "$FIXTURES/ses0001.jsonl" "$FIXTURES/ses0002.jsonl")
+  assert_contains "$out" "$(printf 'first_timestamp\t%s\t2026-09-20T10:00:00.000Z' "ses0001")" "ses0001 keeps its own natural first timestamp"
+  assert_contains "$out" "$(printf 'last_timestamp\t%s\t2026-09-20T10:11:02.000Z' "ses0001")" "ses0001 keeps its own natural last timestamp"
+  assert_contains "$out" "$(printf 'first_timestamp\t%s\t2026-09-20T10:21:00.000Z' "ses0002")" "ses0002's copied opening turn is credited to ses0001, so its own span starts at its one real turn"
+  assert_contains "$out" "$(printf 'last_timestamp\t%s\t2026-09-20T10:21:00.000Z' "ses0002")" "ses0002's own span does not reach back to the copied turn's time"
 }
 
 test_fails_loudly_naming_the_missing_field() {
@@ -180,8 +196,8 @@ test_unreadable_file_fails_loudly_rather_than_dropping_silently() {
   # Round-2 regression: a process substitution hid an unreadable file's
   # failure from `set -e`, so the total printed without the missing file's
   # tokens and exited 0. Skipped under root, which ignores file mode bits.
-  if [[ "$(id -u)" -eq 0 ]]; then
-    printf '%s: skipped, running as root\n' "$_T_CURRENT"
+  if [[ "$(id -u)" == 0 ]]; then
+    printf '  skip %s: skipped (root)\n' "$_T_CURRENT"
     return 0
   fi
   local dir out code
@@ -216,6 +232,57 @@ test_missing_transcript_is_refused() {
   local out code
   out=$("$SESSION_USAGE" "$(tmpdir)/does-not-exist" 2>&1) && code=0 || code=$?
   assert_exit 2 "$code" "a path with no transcript is refused, not silently empty"
+}
+
+test_one_good_argument_and_one_empty_directory_dies_naming_the_empty_one() {
+  # A directory that exists but holds no session .jsonl and no subagents/
+  # must not drop out of the total silently: the good argument's total
+  # must never print at all once a later argument yields nothing.
+  local empty out code
+  empty=$(tmpdir)
+  out=$("$SESSION_USAGE" "$FIXTURES/ses0001.jsonl" "$empty" 2>&1) && code=0 || code=$?
+  assert_exit 2 "$code" "an argument with no transcript is refused even when an earlier argument is good"
+  assert_contains "$out" "$empty" "the refusal names the argument that yielded nothing"
+  assert_not_contains "$out" "TOTAL" "no total is printed once one argument yields no transcript"
+}
+
+test_fast_mode_marks_the_turn_partial() {
+  local fixture pricing out
+  fixture=$(tmpdir)/fast.jsonl
+  printf '{"type":"assistant","message":{"id":"msg_fast","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"speed":"fast","cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
+  assert_contains "$out" "(partial: fast mode)" "a turn priced at standard rates but run at usage.speed other than standard is marked partial"
+  assert_contains "$out" "partial: fast mode for claude-opus-5" "the total names the model that ran fast"
+}
+
+test_us_only_inference_marks_the_turn_partial() {
+  local fixture pricing out
+  fixture=$(tmpdir)/geo.jsonl
+  printf '{"type":"assistant","message":{"id":"msg_geo","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"inference_geo":"us","cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
+  assert_contains "$out" "(partial: US-only inference)" "a turn billed at the 1.1x us surcharge is marked partial since this script does not apply it"
+  assert_contains "$out" "partial: US-only inference for claude-opus-5" "the total names the model"
+}
+
+test_iterations_disagreeing_with_top_level_usage_marks_the_turn_partial() {
+  # A turn whose top-level usage is all zero while its iterations array
+  # carries real tokens. Billing may or may not follow iterations, so the
+  # total is marked partial rather than trusted at face value either way.
+  local fixture pricing out
+  fixture=$(tmpdir)/iter.jsonl
+  printf '{"type":"assistant","message":{"id":"msg_iter","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"iterations":[{"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":994000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
+  assert_contains "$out" "(partial: iterations disagree)" "top-level usage of all zero against a non-empty iterations array is marked partial"
+  assert_contains "$out" "partial: iterations disagree for claude-opus-5" "the total names the model"
 }
 
 run_tests
