@@ -66,7 +66,9 @@
 #   5  refused: rotate found the active log's header missing or malformed
 #   6  internal: the row multiset differed before and after a rotate;
 #      nothing was written
-#   7  refused: rotate's rename onto decisions.md or the archive file failed
+#   7  failed: a rename failed; if the archive already landed, decisions.md
+#      is untouched and holds every row, so remove the archive named here
+#      before rerunning
 #   64 usage error
 
 set -euo pipefail
@@ -103,15 +105,20 @@ require_active_log() { # home -> die 1 unless <home>/decisions.md exists
 
 # --- small string helpers ----------------------------------------------------
 
-# trim STRING: strips every leading and trailing whitespace character
-# (spaces and tabs alike), the same bracket-expression idiom throughout.
+# trim STRING: sets the global TRIMMED to STRING stripped of every leading
+# and trailing whitespace character (spaces and tabs alike), the same
+# bracket-expression idiom throughout. Sets a global rather than printing
+# through a command substitution, so a caller in a per-row loop forks
+# nothing per row: the same move numbers_after_upersedes makes for find's
+# per-row scan, applied here to every row parsed by check, next, find and
+# rotate.
 trim() {
   local s="$1" lead trail
   lead="${s%%[![:space:]]*}"
   s="${s#"$lead"}"
   trail="${s##*[![:space:]]}"
   s="${s%"$trail"}"
-  printf '%s' "$s"
+  TRIMMED="$s"
 }
 
 # parse_row LINE: sets ROW_NUM and ROW_STATUS, returns 1 when LINE is not a
@@ -119,15 +126,15 @@ trim() {
 # status is the text between the line's last two `|`, whatever the decision
 # text between them contains.
 parse_row() {
-  local line="$1" trimmed without status
+  local line="$1" trimmed without
   [[ "$line" =~ $ROW_RE ]] || return 1
   ROW_NUM="${BASH_REMATCH[1]}"
   trimmed="${line%"${line##*[![:space:]]}"}"
   [[ "$trimmed" == *"|" ]] || return 1
   without="${trimmed%|*}"
-  status=$(trim "${without##*|}")
-  [[ -n "$status" ]] || return 1
-  ROW_STATUS="$status"
+  trim "${without##*|}"
+  [[ -n "$TRIMMED" ]] || return 1
+  ROW_STATUS="$TRIMMED"
   return 0
 }
 
@@ -418,10 +425,10 @@ cmd_rotate() {
   tmp_active="$home/.decisions.md.tmp.$$"
   tmp_archive_rows="$home/.decisions-archive-rows.tmp.$$"
   tmp_archive_path=""
-  # EXIT alone, the idiom skills/walkthrough/template.sh already uses: bash
-  # runs an EXIT trap even when a fatal INT or TERM ends the process, so
-  # cleanup still runs, but the run stops there rather than resuming the
-  # rotate with its temp files already gone.
+  # EXIT alone: bash runs the EXIT trap when a fatal INT or TERM ends the
+  # process, then dies of that signal, so cleanup runs but the rotate does
+  # not resume with its temp files already gone. template.sh gets the same
+  # cleanup-on-signal result with explicit re-raising INT and TERM traps.
   trap 'cleanup_tmp "$tmp_topn" "$tmp_active" "$tmp_archive_rows" "$tmp_archive_path"' EXIT
 
   for i in "${active_idx[@]+"${active_idx[@]}"}"; do printf '%s\n' "${ROWS_NUM[$i]}"; done \
@@ -503,7 +510,7 @@ cmd_rotate() {
   # the active log still carries them too, and that duplicate is exactly
   # what check and a later rotate refuse on.
   mv -f "$tmp_archive_path" "$archive_path" || die 7 "rename failed: $tmp_archive_path -> $archive_path"
-  mv -f "$tmp_active" "$active" || die 7 "rename failed: $tmp_active -> $active"
+  mv -f "$tmp_active" "$active" || die 7 "rename failed: $tmp_active -> $active; decisions.md is untouched and holds every row; remove $archive_path before rerunning"
   printf 'rotated: moved %s rows to decisions/archive/%s; kept %s rows in decisions.md\n' \
     "${#moved_nums[@]}" "$archive_name" "$kept_count"
 }
