@@ -1,0 +1,398 @@
+#!/usr/bin/env bash
+#
+# session-usage: token totals and cost for one or more Claude Code sessions,
+# deduped by message.id across all of them, including their subagent
+# transcripts.
+#
+# Usage:
+#   session-usage <session.jsonl-or-dir> [<session.jsonl-or-dir> ...]
+#
+# A session's main transcript and its per-session directory are siblings,
+# the way Claude Code lays them out on disk: <dir>/<session-id>.jsonl next
+# to <dir>/<session-id>/subagents/agent-*.jsonl. Either path resolves the
+# other, so a session.jsonl file and its session-dir give the same answer.
+# Pass several session paths in one call to dedupe across all of them: a
+# later session's opening turns can be a copy of an earlier one's, the way
+# `/branch` and `--fork-session` write them, and counting both copies would
+# double the total. Each argument still gets its own first_timestamp and
+# last_timestamp line in the output, counted only from the turns kept for
+# that argument, "none" for an argument that ends up owning no turn at all.
+# A copied turn is credited to whichever argument first carries it, so a
+# forked file's own span never includes time that already belongs to the
+# session it was forked from. Ownership follows argument order, not
+# chronology: pass session files oldest-created first, or a fork passed
+# before its original takes the original's copied turns.
+#
+# Only `type=="assistant"` lines count. A model of `<synthetic>` is skipped:
+# it is a placeholder line, not a real model call. One API turn can be split
+# across several JSONL lines that share one message.id. In a subagent
+# transcript, an earlier line of a split turn carries a partial output
+# count and the final line carries the turn's completed usage. One turn can
+# carry `stop_reason` on several lines with identical usage, or on none.
+# This script keeps, per message.id, the usage from the latest-timestamped
+# line that carries `stop_reason`, and falls back to the maximum of each
+# usage field across the group for a turn that never completed (no line
+# carries `stop_reason` at all). The timestamp kept is the group's latest
+# line.
+#
+# Pricing comes from bench/pricing.tsv next to this script's bench/, or from
+# the file named by SESSION_USAGE_PRICING when that is set. A model absent
+# from the pricing file is reported as "unpriced", never as a cost of 0. A
+# model present in the pricing file with one rate left blank is priced on
+# its known components and reported as partial when the session actually
+# used the unpriced component.
+#
+# A turn is also marked with `doubt: <reason>`, distinct from "partial",
+# when any of its lines carries `usage.speed` set to something other than
+# "standard", `usage.inference_geo` set to "us", or a non-empty
+# `usage.iterations` array whose summed token fields (read the same five
+# fields directly off each element, no nested `usage` inside it) disagree
+# with the turn's own top-level usage. None of those change the token
+# counts or the price this script applies; "partial" stays reserved for a
+# component this script could not price at all. `doubt: <reason>` marks a
+# total that was fully priced but may be priced at the wrong rate or count,
+# needing a second look rather than being trusted at face value. A row can
+# carry a doubt even when its model is fully unpriced: the doubt survives,
+# naming any element's own `model` where one is present, since the
+# uncounted tokens sitting on that element belong to a model no row
+# reports.
+#
+# Exit codes:
+#   0  done
+#   1  an assistant line is not valid JSON, or is missing message.id,
+#      message.model, message.usage, one of message.usage's token fields,
+#      or one of those same token fields on an element of
+#      message.usage.iterations
+#   2  no transcript found, or no pricing file found
+#   64 usage error
+#
+
+set -euo pipefail
+
+die() { # code message...
+  local code="$1"; shift
+  printf 'session-usage: %s\n' "$*" >&2
+  exit "$code"
+}
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 64
+}
+
+[[ $# -ge 1 ]] || usage
+command -v jq >/dev/null 2>&1 || die 2 "jq is required and was not found on PATH"
+
+# add_session_files INPUT ARGIDX appends INPUT's main transcript and its
+# subagents/agent-*.jsonl files to the shared `files` array, tagging each
+# with ARGIDX in the parallel `file_args` array, and records INPUT's
+# session id in `arg_labels[ARGIDX]`. Called once per argument, so several
+# session paths accumulate into one `files` list that the dedupe pass
+# below treats as a single session, while ARGIDX still lets the output
+# report each argument's own span under its session id, the same id
+# whether the argument named the session's .jsonl file or its sibling
+# directory. Dies naming INPUT when it contributes no file at all, rather
+# than letting it drop out of the total silently.
+add_session_files() {
+  local input="$1" argidx="$2" session_dir session_id main main_dir f added=0
+  if [[ -d "$input" ]]; then
+    session_dir=$(cd "$input" && pwd)
+    session_id=$(basename "$session_dir")
+    main="$(dirname "$session_dir")/$session_id.jsonl"
+  elif [[ -f "$input" ]]; then
+    main_dir=$(cd "$(dirname "$input")" && pwd)
+    main="$main_dir/$(basename "$input")"
+    session_id=$(basename "$main" .jsonl)
+    session_dir="$main_dir/$session_id"
+  else
+    die 2 "no such file or directory: $input"
+  fi
+  arg_labels[argidx]="$session_id"
+  if [[ -f "$main" ]]; then
+    files+=("$main")
+    file_args+=("$argidx")
+    added=1
+  fi
+  if [[ -d "$session_dir/subagents" ]]; then
+    for f in "$session_dir"/subagents/agent-*.jsonl; do
+      if [[ -e "$f" ]]; then
+        files+=("$f")
+        file_args+=("$argidx")
+        added=1
+      fi
+    done
+  fi
+  [[ $added -eq 1 ]] || die 2 "no transcript found for $input (looked for a main .jsonl file and a subagents/agent-*.jsonl directory next to it)"
+}
+
+files=()
+file_args=()
+arg_labels=()
+argidx=0
+for input in "$@"; do
+  add_session_files "$input" "$argidx"
+  argidx=$((argidx + 1))
+done
+
+bin_dir=$(cd "$(dirname "$0")" && pwd)
+pricing="${SESSION_USAGE_PRICING:-$bin_dir/../pricing.tsv}"
+[[ -f "$pricing" ]] || die 2 "no pricing file at $pricing"
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/session-usage.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+records="$tmp/records.jsonl"
+: > "$records"
+
+# One jq pass reads an entire file and, for each line, prints one of:
+#   SKIP
+#   ERR\t<line-number>\t<message>
+#   OK\t<compact JSON record>
+# so a malformed or incomplete line is named by file and line number without
+# spawning a second jq process per line.
+# The $ names below are jq variables, not shell variables: single-quoted on
+# purpose.
+# `toks` reads the same five token fields off any object that carries them
+# directly: top-level `message.usage`, and each element of
+# `usage.iterations`, which carries these five fields itself rather than
+# nesting them under an `iterations[].usage` that does not exist on a real
+# transcript. `toklabels` names them in the same order, for the missing-
+# field messages below.
+# shellcheck disable=SC2016
+LINE_FILTER='
+def toks: [.input_tokens, .output_tokens, .cache_read_input_tokens, .cache_creation.ephemeral_5m_input_tokens, .cache_creation.ephemeral_1h_input_tokens];
+def toklabels: ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation.ephemeral_5m_input_tokens", "cache_creation.ephemeral_1h_input_tokens"];
+def missing_labels(prefix):
+  (toks) as $t
+  | ([$t, toklabels] | transpose | map(select(.[0] == null) | prefix + .[1]));
+
+input_line_number as $lineno
+| . as $line
+| if ($line | length) == 0 then "SKIP"
+  else
+    try (
+      ($line | fromjson) as $obj
+      | ($obj.message.usage | missing_labels("message.usage.")) as $top_missing
+      | (($obj.message.usage.iterations // []) | map(missing_labels("message.usage.iterations[].")) | flatten) as $iter_missing
+      | if $obj.type != "assistant" then "SKIP"
+        elif $obj.message.model == "<synthetic>" then "SKIP"
+        elif ($obj.message == null) or ($obj.message.usage == null) then
+          "ERR\t\($lineno)\tassistant line missing message.usage"
+        elif ($obj.message.model == null) then
+          "ERR\t\($lineno)\tassistant line missing message.model"
+        elif ($obj.message.id == null) then
+          "ERR\t\($lineno)\tassistant line missing message.id"
+        elif ($top_missing | length) > 0 then
+          "ERR\t\($lineno)\tassistant line missing " + ($top_missing | first)
+        elif ($iter_missing | length) > 0 then
+          "ERR\t\($lineno)\tassistant line missing " + ($iter_missing | first)
+        else
+          ( ($obj.message.usage.speed // null) as $speed
+          | ($obj.message.usage.inference_geo // null) as $geo
+          | ($obj.message.usage.iterations // []) as $iters
+          | ($obj.message.usage | toks) as $top
+          | (if ($iters | length) > 0 then
+               ( ($iters | map(toks)) as $iter_toks
+               | ($iter_toks | transpose | map(add)) as $isum
+               | $isum != $top
+               )
+             else false
+             end) as $iter_mismatch
+          | ($iters | map(.model? // empty) | unique) as $iter_models
+          | ([
+              (if ($speed != null and $speed != "standard") then "fast mode" else empty end),
+              (if $geo == "us" then "US-only inference" else empty end),
+              (if $iter_mismatch then
+                 (if ($iter_models | length) > 0 then
+                    "iterations disagree (" + ($iter_models | join(", ")) + ")"
+                  else "iterations disagree"
+                  end)
+               else empty end)
+            ]) as $flags
+          | "OK\t" + ({
+              id: $obj.message.id,
+              model: $obj.message.model,
+              ts: ($obj.timestamp // null),
+              stop_reason: ($obj.message.stop_reason // null),
+              argidx: $argidx,
+              flags: $flags,
+              input: $top[0],
+              output: $top[1],
+              cread: $top[2],
+              cw5m: $top[3],
+              cw1h: $top[4]
+            } | tojson)
+          )
+        end
+    ) catch "ERR\t\($lineno)\tnot a valid JSON line"
+  end
+'
+
+padded="$tmp/padded.jsonl"
+lines="$tmp/lines"
+for i in "${!files[@]}"; do
+  f="${files[$i]}"
+  fargidx="${file_args[$i]}"
+  # A process substitution here would hide jq's exit status from `set -e`
+  # and from the `|| die` below, so an unreadable file would print nothing
+  # and the script would exit 0 with a total that silently drops that
+  # file's tokens. Reading through a real file avoids that, and copying to
+  # $padded first guarantees a trailing newline: without one, jq's
+  # `input_line_number` undercounts the true line number of a malformed
+  # final line by one.
+  cat "$f" > "$padded" 2>/dev/null || die 1 "$f: could not be read"
+  printf '\n' >> "$padded"
+  jq -R -r --argjson argidx "$fargidx" "$LINE_FILTER" "$padded" > "$lines" || die 1 "$f: could not be read"
+  while IFS= read -r out; do
+    case "$out" in
+      SKIP) ;;
+      ERR$'\t'*)
+        rest="${out#ERR$'\t'}"
+        lineno="${rest%%$'\t'*}"
+        msg="${rest#*$'\t'}"
+        die 1 "$f:$lineno: $msg"
+        ;;
+      OK$'\t'*)
+        printf '%s\n' "${out#OK$'\t'}" >> "$records"
+        ;;
+    esac
+  done < "$lines"
+done
+
+# Dedupe per message.id, taking the stop_reason line's usage when a group
+# has one and the maximum of each field when it does not (an interrupted
+# turn with no final line). Sum per model, then price from pricing.tsv,
+# treating a blank rate as unpriced for that component rather than $0.
+# shellcheck disable=SC2016
+AGG='
+def notnull: select(. != null);
+def parseprice: if . == "" then null else tonumber end;
+($pricing_text
+  | split("\n")
+  | map(select(length > 0))
+  | map(select(startswith("#") | not))
+) as $plines
+| ($plines[1:] | map(split("\t")) | map({
+    model: .[0],
+    input: (.[1] | parseprice),
+    output: (.[2] | parseprice),
+    cw5m: (.[3] | parseprice),
+    cw1h: (.[4] | parseprice),
+    cread: (.[5] | parseprice)
+  }) | INDEX(.model)) as $pmap
+| {input:"input", output:"output", cw5m:"cache_write_5m", cw1h:"cache_write_1h", cread:"cache_read"} as $labels
+| ($records | group_by(.id) | map(
+    . as $g
+    | ($g | map(select(.stop_reason != null))) as $withstop
+    | (if ($withstop | length) > 0 then ($withstop | sort_by(.ts) | last) else null end) as $stop
+    | {
+        id: $g[0].id,
+        model: $g[0].model,
+        ts: ($g | map(.ts) | map(notnull) | sort | last // null),
+        owner: ($g | map(.argidx) | min),
+        flags: ($g | map(.flags) | add | unique),
+        input:  (if $stop != null then $stop.input  else ($g | map(.input)  | max) end),
+        output: (if $stop != null then $stop.output else ($g | map(.output) | max) end),
+        cw5m:   (if $stop != null then $stop.cw5m   else ($g | map(.cw5m)   | max) end),
+        cw1h:   (if $stop != null then $stop.cw1h   else ($g | map(.cw1h)   | max) end),
+        cread:  (if $stop != null then $stop.cread  else ($g | map(.cread)  | max) end)
+      }
+  )) as $deduped
+| ([range(0; ($arg_labels | length))] | map(
+    . as $i
+    | ($deduped | map(select(.owner == $i))) as $owned
+    | {
+        owner: $i,
+        arg: $arg_labels[$i],
+        first_ts: ($owned | map(.ts) | map(notnull) | sort | first // null),
+        last_ts: ($owned | map(.ts) | map(notnull) | sort | last // null)
+      }
+  )) as $arg_spans
+| ($deduped | group_by(.model) | map({
+    model: .[0].model,
+    input: (map(.input) | add),
+    output: (map(.output) | add),
+    cw5m: (map(.cw5m) | add),
+    cw1h: (map(.cw1h) | add),
+    cread: (map(.cread) | add),
+    note_reasons: (map(.flags) | add | unique)
+  })) as $sums
+| ($sums | map(
+    . as $r
+    | ($pmap[$r.model]) as $p
+    | if $p == null then
+        $r + { cost: null, partial_fields: [], fully_unpriced: true }
+      else
+        (["input","output","cw5m","cw1h","cread"] | map(
+          . as $f
+          | ($r | .[$f]) as $u
+          | ($p | .[$f]) as $rate
+          | if $rate == null then
+              (if $u == 0 then {amt: 0, field: null} else {amt: 0, field: $f} end)
+            else {amt: ($u / 1000000 * $rate), field: null}
+            end
+        )) as $parts
+        | $r + {
+            cost: ($parts | map(.amt) | add),
+            partial_fields: ($parts | map(select(.field != null) | $labels[.field])),
+            fully_unpriced: false
+          }
+      end
+  )) as $priced
+| {
+    rows: $priced,
+    arg_spans: $arg_spans,
+    total_input: ($sums | map(.input) | add // 0),
+    total_output: ($sums | map(.output) | add // 0),
+    total_cw5m: ($sums | map(.cw5m) | add // 0),
+    total_cw1h: ($sums | map(.cw1h) | add // 0),
+    total_cread: ($sums | map(.cread) | add // 0),
+    total_cost: ($priced | map(.cost) | map(notnull) | add // 0),
+    all_unpriced: ($priced | length > 0 and all(.[]; .fully_unpriced)),
+    unpriced_models: ($priced | map(select(.fully_unpriced) | .model)),
+    partial_notes: ($priced
+      | map(select(.fully_unpriced | not) | select((.partial_fields | length) > 0)
+          | . as $row | ($row.partial_fields | map(. + " unpriced for " + $row.model)))
+      | flatten),
+    flag_notes: ($priced
+      | map(select((.note_reasons | length) > 0)
+          | . as $row | ($row.note_reasons | map(. + " for " + $row.model)))
+      | flatten)
+  }
+'
+
+# shellcheck disable=SC2016
+FORMAT='
+# "partial" and "doubt" never mix into one label: "partial" means a
+# component this script could not price at all, and "doubt: <reason>"
+# means the row was fully priced but a doubt (fast mode, US-only inference,
+# or disagreeing iterations) says the rate or count it priced against may
+# not be what was actually billed. A row or the total can carry both at
+# once, joined into one parenthetical by "; ".
+def notes_suffix(partial_parts; doubt_parts):
+  (if (partial_parts | length) > 0 then ["partial: " + (partial_parts | join("; "))] else [] end) as $p
+  | (if (doubt_parts | length) > 0 then ["doubt: " + (doubt_parts | join("; "))] else [] end) as $d
+  | ($p + $d) as $clauses
+  | if ($clauses | length) == 0 then "" else " (" + ($clauses | join("; ")) + ")" end;
+def rowcost:
+  (.partial_fields | map(. + " unpriced")) as $pf
+  | if .fully_unpriced then "unpriced" + notes_suffix([]; .note_reasons)
+    else (.cost | tostring) + notes_suffix($pf; .note_reasons)
+    end;
+(.rows[] | [.model, (.input|tostring), (.output|tostring), (.cw5m|tostring), (.cw1h|tostring), (.cread|tostring), rowcost]),
+(["TOTAL", (.total_input|tostring), (.total_output|tostring), (.total_cw5m|tostring), (.total_cw1h|tostring), (.total_cread|tostring),
+   (if .all_unpriced then "unpriced" + notes_suffix([]; .flag_notes)
+    else
+      (.total_cost|tostring) + notes_suffix(
+        (if (.unpriced_models|length) > 0 then ["unpriced " + (.unpriced_models|join(","))] else [] end) + .partial_notes;
+        .flag_notes)
+    end)]),
+(.arg_spans[] | (
+   ["first_timestamp", .arg, (.first_ts // "none")],
+   ["last_timestamp", .arg, (.last_ts // "none")]
+ ))
+| @tsv
+'
+
+printf 'model\tinput_tokens\toutput_tokens\tcache_write_5m_tokens\tcache_write_1h_tokens\tcache_read_tokens\tcost_usd\n'
+arg_labels_json=$(printf '%s\n' "${arg_labels[@]}" | jq -R . | jq -s .)
+jq -n --slurpfile records "$records" --arg pricing_text "$(cat "$pricing")" --argjson arg_labels "$arg_labels_json" "$AGG" | jq -r "$FORMAT"
