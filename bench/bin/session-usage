@@ -16,9 +16,12 @@
 # `/branch` and `--fork-session` write them, and counting both copies would
 # double the total. Each argument still gets its own first_timestamp and
 # last_timestamp line in the output, counted only from the turns kept for
-# that argument. A copied turn is credited to whichever argument first
-# carries it, so a forked file's own span never includes time that already
-# belongs to the session it was forked from.
+# that argument, "none" for an argument that ends up owning no turn at all.
+# A copied turn is credited to whichever argument first carries it, so a
+# forked file's own span never includes time that already belongs to the
+# session it was forked from. Ownership follows argument order, not
+# chronology: pass session files oldest-created first, or an earlier fork
+# can end up crediting a later original's time to itself.
 #
 # Only `type=="assistant"` lines count. A model of `<synthetic>` is skipped:
 # it is a placeholder line, not a real model call. One API turn can be split
@@ -39,12 +42,16 @@
 # its known components and reported as partial when the session actually
 # used the unpriced component.
 #
-# A turn is also marked partial, naming why, when any of its lines carries
-# `usage.speed` set to something other than "standard", `usage.inference_geo`
-# set to "us", or an `usage.iterations` array whose summed token fields
-# disagree with the turn's own top-level usage. None of those change the
-# token counts or the price this script applies; they mark the total as
-# needing a second look rather than silently pricing it as if none applied.
+# A turn is also marked with `check: <reason>`, distinct from "partial",
+# when any of its lines carries `usage.speed` set to something other than
+# "standard", `usage.inference_geo` set to "us", or a non-empty
+# `usage.iterations` array whose summed token fields (read the same five
+# fields directly off each element, no nested `usage` inside it) disagree
+# with the turn's own top-level usage. None of those change the token
+# counts or the price this script applies; "partial" stays reserved for a
+# component this script could not price at all. `check: <reason>` marks a
+# total that was fully priced but may be priced at the wrong rate or count,
+# needing a second look rather than being trusted at face value.
 #
 # Exit codes:
 #   0  done
@@ -139,8 +146,20 @@ records="$tmp/records.jsonl"
 # spawning a second jq process per line.
 # The $ names below are jq variables, not shell variables: single-quoted on
 # purpose.
+# `toks` reads the same five token fields off any object that carries them
+# directly: top-level `message.usage`, and each element of
+# `usage.iterations`, which carries these five fields itself rather than
+# nesting them under an `iterations[].usage` that does not exist on a real
+# transcript. `toklabels` names them in the same order, for the missing-
+# field messages below.
 # shellcheck disable=SC2016
 LINE_FILTER='
+def toks: [.input_tokens, .output_tokens, .cache_read_input_tokens, .cache_creation.ephemeral_5m_input_tokens, .cache_creation.ephemeral_1h_input_tokens];
+def toklabels: ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation.ephemeral_5m_input_tokens", "cache_creation.ephemeral_1h_input_tokens"];
+def missing_labels(prefix):
+  (toks) as $t
+  | [range(0; 5) | select($t[.] == null) | prefix + toklabels[.]];
+
 input_line_number as $lineno
 | . as $line
 | if ($line | length) == 0 then "SKIP"
@@ -155,31 +174,23 @@ input_line_number as $lineno
           "ERR\t\($lineno)\tassistant line missing message.model"
         elif ($obj.message.id == null) then
           "ERR\t\($lineno)\tassistant line missing message.id"
-        elif ($obj.message.usage.input_tokens == null) then
-          "ERR\t\($lineno)\tassistant line missing message.usage.input_tokens"
-        elif ($obj.message.usage.output_tokens == null) then
-          "ERR\t\($lineno)\tassistant line missing message.usage.output_tokens"
-        elif ($obj.message.usage.cache_read_input_tokens == null) then
-          "ERR\t\($lineno)\tassistant line missing message.usage.cache_read_input_tokens"
-        elif ($obj.message.usage.cache_creation.ephemeral_5m_input_tokens == null) then
-          "ERR\t\($lineno)\tassistant line missing message.usage.cache_creation.ephemeral_5m_input_tokens"
-        elif ($obj.message.usage.cache_creation.ephemeral_1h_input_tokens == null) then
-          "ERR\t\($lineno)\tassistant line missing message.usage.cache_creation.ephemeral_1h_input_tokens"
+        elif (($obj.message.usage | missing_labels("message.usage.")) | length) > 0 then
+          "ERR\t\($lineno)\tassistant line missing " + (($obj.message.usage | missing_labels("message.usage.")) | first)
+        elif (
+          ($obj.message.usage.iterations // []) as $iters
+          | ($iters | map(missing_labels("message.usage.iterations[].")) | flatten | length) > 0
+        ) then
+          "ERR\t\($lineno)\tassistant line missing " +
+            (($obj.message.usage.iterations // []) | map(missing_labels("message.usage.iterations[].")) | flatten | first)
         else
           ( ($obj.message.usage.speed // null) as $speed
           | ($obj.message.usage.inference_geo // null) as $geo
           | ($obj.message.usage.iterations // []) as $iters
+          | ($obj.message.usage | toks) as $top
           | (if ($iters | length) > 0 then
-               ( ($iters | map(.usage.input_tokens // 0) | add) as $isum_in
-               | ($iters | map(.usage.output_tokens // 0) | add) as $isum_out
-               | ($iters | map(.usage.cache_read_input_tokens // 0) | add) as $isum_cread
-               | ($iters | map(.usage.cache_creation.ephemeral_5m_input_tokens // 0) | add) as $isum_cw5m
-               | ($iters | map(.usage.cache_creation.ephemeral_1h_input_tokens // 0) | add) as $isum_cw1h
-               | ($isum_in != $obj.message.usage.input_tokens)
-                 or ($isum_out != $obj.message.usage.output_tokens)
-                 or ($isum_cread != $obj.message.usage.cache_read_input_tokens)
-                 or ($isum_cw5m != $obj.message.usage.cache_creation.ephemeral_5m_input_tokens)
-                 or ($isum_cw1h != $obj.message.usage.cache_creation.ephemeral_1h_input_tokens)
+               ( ($iters | map(toks)) as $iter_toks
+               | ([0, 1, 2, 3, 4] | map(. as $i | $iter_toks | map(.[$i]) | add)) as $isum
+               | $isum != $top
                )
              else false
              end) as $iter_mismatch
@@ -195,11 +206,11 @@ input_line_number as $lineno
               stop_reason: ($obj.message.stop_reason // null),
               argidx: $argidx,
               flags: $flags,
-              input: $obj.message.usage.input_tokens,
-              output: $obj.message.usage.output_tokens,
-              cw5m: $obj.message.usage.cache_creation.ephemeral_5m_input_tokens,
-              cw1h: $obj.message.usage.cache_creation.ephemeral_1h_input_tokens,
-              cread: $obj.message.usage.cache_read_input_tokens
+              input: $top[0],
+              output: $top[1],
+              cread: $top[2],
+              cw5m: $top[3],
+              cw1h: $top[4]
             } | tojson)
           )
         end
@@ -277,12 +288,16 @@ def parseprice: if . == "" then null else tonumber end;
         cread:  (if $stop != null then $stop.cread  else ($g | map(.cread)  | max) end)
       }
   )) as $deduped
-| ($deduped | map(.ts) | map(notnull) | sort) as $ts
-| ($deduped | group_by(.owner) | map({
-    owner: .[0].owner,
-    first_ts: (map(.ts) | map(notnull) | sort | first // null),
-    last_ts: (map(.ts) | map(notnull) | sort | last // null)
-  }) | map(. + {arg: $arg_labels[.owner]})) as $arg_spans
+| ([range(0; ($arg_labels | length))] | map(
+    . as $i
+    | ($deduped | map(select(.owner == $i))) as $owned
+    | {
+        owner: $i,
+        arg: $arg_labels[$i],
+        first_ts: ($owned | map(.ts) | map(notnull) | sort | first // null),
+        last_ts: ($owned | map(.ts) | map(notnull) | sort | last // null)
+      }
+  )) as $arg_spans
 | ($deduped | group_by(.model) | map({
     model: .[0].model,
     input: (map(.input) | add),
@@ -332,31 +347,35 @@ def parseprice: if . == "" then null else tonumber end;
     flag_notes: ($priced
       | map(select(.fully_unpriced | not) | select((.note_reasons | length) > 0)
           | . as $row | ($row.note_reasons | map(. + " for " + $row.model)))
-      | flatten),
-    first_ts: ($ts[0] // null),
-    last_ts: ($ts[-1] // null)
+      | flatten)
   }
 '
 
 # shellcheck disable=SC2016
 FORMAT='
+# "partial" and "check" never mix into one label: "partial" means a
+# component this script could not price at all, and "check: <reason>"
+# means the row was fully priced but a doubt (fast mode, US-only inference,
+# or disagreeing iterations) says the rate or count it priced against may
+# not be what was actually billed. A row or the total can carry both at
+# once, as two separate parenthetical clauses.
+def notes_suffix(partial_parts; check_parts):
+  (if (partial_parts | length) > 0 then ["partial: " + (partial_parts | join("; "))] else [] end) as $p
+  | (if (check_parts | length) > 0 then ["check: " + (check_parts | join("; "))] else [] end) as $c
+  | ($p + $c) as $clauses
+  | if ($clauses | length) == 0 then "" else " (" + ($clauses | join("; ")) + ")" end;
 def rowcost:
   (.partial_fields | map(. + " unpriced")) as $pf
-  | ($pf + .note_reasons) as $notes
   | if .fully_unpriced then "unpriced"
-    elif ($notes | length) > 0 then
-      (.cost | tostring) + " (partial: " + ($notes | join("; ")) + ")"
-    else (.cost | tostring)
+    else (.cost | tostring) + notes_suffix($pf; .note_reasons)
     end;
 (.rows[] | [.model, (.input|tostring), (.output|tostring), (.cw5m|tostring), (.cw1h|tostring), (.cread|tostring), rowcost]),
 (["TOTAL", (.total_input|tostring), (.total_output|tostring), (.total_cw5m|tostring), (.total_cw1h|tostring), (.total_cread|tostring),
    (if .all_unpriced then "unpriced"
-    elif (.unpriced_models|length) > 0 or (.partial_notes|length) > 0 or (.flag_notes|length) > 0 then
-      (.total_cost|tostring) + " (partial: " +
-        (( (if (.unpriced_models|length) > 0 then ["unpriced " + (.unpriced_models|join(","))] else [] end)
-           + .partial_notes + .flag_notes)
-         | join("; ")) + ")"
-    else (.total_cost|tostring)
+    else
+      (.total_cost|tostring) + notes_suffix(
+        (if (.unpriced_models|length) > 0 then ["unpriced " + (.unpriced_models|join(","))] else [] end) + .partial_notes;
+        .flag_notes)
     end)]),
 (.arg_spans[] | (
    ["first_timestamp", .arg, (.first_ts // "none")],
