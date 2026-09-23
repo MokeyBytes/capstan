@@ -12,12 +12,12 @@ capstan_type: tracker
 | code-standards | declared-checks | merged | 243d4db |
 | external-review | bench | building | |
 | external-review | board | planned | |
-| external-review | deny | building | |
+| external-review | deny | merged | 9c61880 |
 | external-review | log-helper | building | |
 | external-review | log-readers | planned | |
 | external-review | quick | building | |
 | external-review | readme | planned | |
-| external-review | root-test | building | |
+| external-review | root-test | merged | 7f0b587 |
 | github-surface | docs | merged | 04d33d6 |
 | github-surface | effort-read | merged | b393bb7 |
 | github-surface | phase-files | merged | a681858 |
