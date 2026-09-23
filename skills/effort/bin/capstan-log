@@ -1,0 +1,530 @@
+#!/usr/bin/env bash
+#
+# capstan-log: rotate the decision log, and read across it and its archives.
+#
+# The active log, <home>/decisions.md, holds every `open`, `assumed` and
+# `unformed` row plus the newest N rows of any status. Everything else moves,
+# unedited, into one append-only file per rotation under
+# <home>/decisions/archive/. Row numbers stay global and are never reused or
+# renumbered; a row's standing (whether something superseded it) is resolved
+# by grepping every file rather than by editing an archived row.
+#
+# A row is a line matching `^| NUM |`. Its status is the text between the
+# last two `|` on the line, so decision text may itself contain `|` and
+# backticks, and is trimmed of all whitespace, tabs included. `find` reads
+# every `[Ss]upersedes <n>` phrase on a line, including a second phrase on
+# the same line and a comma/`and`-joined list such as
+# `Supersedes 36, 43 and 57`.
+#
+# No jq: bash and POSIX tools only (awk, grep, sed, sort, find, head, tail,
+# wc, tr, mv), per 0004.
+#
+# Usage:
+#   capstan-log rotate <home> [--keep N] [--threshold KB] [--force]
+#   capstan-log check  <home>
+#   capstan-log next   <home>
+#   capstan-log find   <home> <n>
+#
+# rotate:
+#   Defaults: --keep 50, --threshold 100 (KB). Prints "under threshold" and
+#   exits 0 without writing anything when <home>/decisions.md is at or below
+#   the threshold, unless --force. Otherwise every open, assumed or unformed
+#   row stays active, and so do the N highest-numbered rows of any status;
+#   every other row moves once, byte-identical, into
+#   <home>/decisions/archive/decisions-<lo>-<hi>.md, <lo> and <hi> the lowest
+#   and highest number moved, zero-padded to four digits. Writes to temp
+#   files, verifies the sorted row multiset is unchanged, then renames the
+#   archive into place before the active log, so a kill between the two
+#   renames leaves the moved rows visible in the archive and check and a
+#   later rotate refuse on the resulting duplicate rather than losing them.
+#   An EXIT trap removes every temp path whenever the process ends, a signal
+#   included, and the run stops there rather than resuming the rotate
+#   afterwards. Refuses, writing nothing, if the target archive file already
+#   exists, any row number is duplicated, a row is unparseable, or the
+#   active log's header is missing or malformed.
+#
+# check: every row line in the active log and its archives parses, and every
+#   number is unique across files. Prints "ok <count> rows, highest <n>".
+#
+# next: prints the highest row number across all files, plus 1.
+#
+# find: prints the file and row numbered <n>, then every row in any file
+#   whose text contains `upersedes <n>` as a whole number (so it matches
+#   both "Supersedes" and "supersedes"), including a list such as
+#   "Supersedes 40, 48, 50, 58".
+#
+# check, next and find all require <home>/decisions.md to exist.
+#
+# Exit codes:
+#   0  done: rotated (including a no-op under threshold), check passed,
+#      next printed, find resolved
+#   1  not found: <home> or <home>/decisions.md is missing, or find found no
+#      row numbered <n>
+#   2  refused: rotate's target archive file already exists
+#   3  refused: a row number is duplicated across files
+#   4  refused: a row is unparseable
+#   5  refused: rotate found the active log's header missing or malformed
+#   6  internal: the row multiset differed before and after a rotate;
+#      nothing was written
+#   7  failed: a rename failed; if the archive already landed, decisions.md
+#      is untouched and holds every row, so remove the archive named here
+#      before rerunning
+#   64 usage error
+
+set -euo pipefail
+
+DEFAULT_KEEP=50
+DEFAULT_THRESHOLD=100
+
+# A row is a line matching this pattern; used at every site that recognises
+# or extracts one, whether as a bash regex or a grep -E pattern.
+ROW_RE='^\| ([0-9]+) \|'
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 64
+}
+
+die() { # code message...
+  local code="$1"; shift
+  printf 'capstan-log: %s\n' "$*" >&2
+  exit "$code"
+}
+
+need_value() { # option value
+  [[ -n "${2:-}" ]] || { printf 'capstan-log: %s needs a value\n\n' "$1" >&2; usage; }
+}
+
+require_home() {
+  [[ -d "$1" ]] || die 1 "no such directory: $1"
+}
+
+require_active_log() { # home -> die 1 unless <home>/decisions.md exists
+  [[ -f "$1/decisions.md" ]] || die 1 "no such file: $1/decisions.md"
+}
+
+# --- small string helpers ----------------------------------------------------
+
+# trim STRING: sets the global TRIMMED to STRING stripped of every leading
+# and trailing whitespace character (spaces and tabs alike), the same
+# bracket-expression idiom throughout. Sets a global rather than printing
+# through a command substitution, so a caller in a per-row loop forks
+# nothing per row: the same move numbers_after_upersedes makes for find's
+# per-row scan, applied here to every row parsed by check, next, find and
+# rotate.
+trim() {
+  local s="$1" lead trail
+  lead="${s%%[![:space:]]*}"
+  s="${s#"$lead"}"
+  trail="${s##*[![:space:]]}"
+  s="${s%"$trail"}"
+  TRIMMED="$s"
+}
+
+# parse_row LINE: sets ROW_NUM and ROW_STATUS, returns 1 when LINE is not a
+# well-formed row. The number comes from the fixed `| NUM |` prefix; the
+# status is the text between the line's last two `|`, whatever the decision
+# text between them contains.
+parse_row() {
+  local line="$1" trimmed without
+  [[ "$line" =~ $ROW_RE ]] || return 1
+  ROW_NUM="${BASH_REMATCH[1]}"
+  trimmed="${line%"${line##*[![:space:]]}"}"
+  [[ "$trimmed" == *"|" ]] || return 1
+  without="${trimmed%|*}"
+  trim "${without##*|}"
+  [[ -n "$TRIMMED" ]] || return 1
+  ROW_STATUS="$TRIMMED"
+  return 0
+}
+
+is_row_candidate() {
+  [[ "$1" =~ $ROW_RE ]]
+}
+
+# numbers_after_upersedes LINE: sets the array SUPERSEDE_NUMS to one element
+# for every place LINE reads `[Ss]upersedes <n>`, including a comma/`and`-
+# joined list such as `Supersedes 36, 43, 46, 49, 51, 54 and 57`. A second
+# phrase later on the same line, and a plain comma list with no `and`, are
+# both read. Fills an array rather than printing lines through a process
+# substitution, so a caller looping over many rows forks nothing per row:
+# bash 3.2 never closes a process substitution's descriptor, and one opened
+# per row aborted with SIGABRT past about 256 rows (this is what find's
+# per-row loop used to do).
+numbers_after_upersedes() {
+  SUPERSEDE_NUMS=()
+  local rest="$1" list item
+  while [[ "$rest" =~ upersedes[[:space:]]+([0-9]+([,[:space:]]+(and[[:space:]]+)?[0-9]+)*) ]]; do
+    list="${BASH_REMATCH[1]}"
+    rest="${rest#*"${BASH_REMATCH[0]}"}"
+    while [[ "$list" =~ ([0-9]+) ]]; do
+      item="${BASH_REMATCH[1]}"
+      SUPERSEDE_NUMS+=("$item")
+      list="${list#*"$item"}"
+    done
+  done
+}
+
+# --- files --------------------------------------------------------------
+
+list_archive_files() { # home -> one path per line, sorted, empty when none
+  local dir="$1/decisions/archive"
+  [[ -d "$dir" ]] || return 0
+  find "$dir" -maxdepth 1 -type f -name '*.md' | sort
+}
+
+validate_header() { # file -> 0 when the frontmatter and table header are present
+  local file="$1"
+  grep -qx 'capstan_type: decision-log' "$file" || return 1
+  grep -qx '| # | Date | Decision | Status |' "$file" || return 1
+  grep -qE '^\|-+\|' "$file" || return 1
+  return 0
+}
+
+extract_row_lines() { # file -> every candidate row line, one per line
+  grep -E "$ROW_RE" "$1" || true
+}
+
+# sorted_rows FILE... -> sorted row lines across every FILE that exists
+sorted_rows() {
+  local f
+  for f in "$@"; do
+    [[ -f "$f" ]] && extract_row_lines "$f"
+  done | sort
+}
+
+cleanup_tmp() { # PATH... -> remove every temp path that was created so far
+  local p
+  for p in "$@"; do
+    [[ -n "$p" ]] && rm -f "$p"
+  done
+  return 0
+}
+
+# verify_multiset_or_die --before BEFORE_FILE... --after AFTER_FILE...: dies
+# with exit 6 unless the sorted row multiset across BEFORE_FILE... equals the
+# one across AFTER_FILE.... The one verify a rotate runs, whether or not any
+# row moved. Temp-path cleanup on the way out is the EXIT trap's job: die()
+# exits through it, so a cleanup list here would only repeat what that trap
+# already does.
+verify_multiset_or_die() {
+  local before=() after=() mode="" a
+  for a in "$@"; do
+    case "$a" in
+      --before) mode=before; continue ;;
+      --after) mode=after; continue ;;
+    esac
+    case "$mode" in
+      before) before+=("$a") ;;
+      after) after+=("$a") ;;
+    esac
+  done
+  if [[ "$(sorted_rows "${before[@]+"${before[@]}"}")" != "$(sorted_rows "${after[@]+"${after[@]}"}")" ]]; then
+    die 6 "row multiset differed before and after; nothing was written"
+  fi
+}
+
+# --- collecting rows across files -------------------------------------------
+#
+# collect_rows FILE... fills the parallel arrays ROWS_FILE, ROWS_NUM,
+# ROWS_STATUS and ROWS_LINE, in file order, then file order within each file.
+# Returns 1 on the first unparseable row, with ERR_KIND=parse and ERR_MSG set.
+
+collect_rows() {
+  ROWS_FILE=(); ROWS_NUM=(); ROWS_STATUS=(); ROWS_LINE=()
+  ERR_KIND=""; ERR_MSG=""
+  local file line
+  for file in "$@"; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      is_row_candidate "$line" || continue
+      if ! parse_row "$line"; then
+        ERR_KIND=parse
+        ERR_MSG="unparseable row in $file: $line"
+        return 1
+      fi
+      ROWS_FILE+=("$file")
+      ROWS_NUM+=("$ROW_NUM")
+      ROWS_STATUS+=("$ROW_STATUS")
+      ROWS_LINE+=("$line")
+    done < "$file"
+  done
+  return 0
+}
+
+# find_duplicate: sets ERR_KIND=dup and ERR_MSG when the already-collected
+# ROWS_NUM repeats a number. A single sort plus uniq -d over the normalised
+# numbers, rather than a pairwise scan, so this stays linear-ish as the log
+# grows.
+find_duplicate() {
+  local normalized dup
+  normalized=$(for n in "${ROWS_NUM[@]+"${ROWS_NUM[@]}"}"; do printf '%s\n' "$((10#$n))"; done | sort -n)
+  dup=$(printf '%s\n' "$normalized" | uniq -d | head -n1)
+  if [[ -n "$dup" ]]; then
+    local files="" i
+    for ((i = 0; i < ${#ROWS_NUM[@]}; i++)); do
+      if [[ "$((10#${ROWS_NUM[$i]}))" -eq "$dup" ]]; then
+        files="$files ${ROWS_FILE[$i]}"
+      fi
+    done
+    ERR_KIND=dup
+    ERR_MSG="row number $dup is duplicated:$files"
+    return 1
+  fi
+  return 0
+}
+
+die_from_scan_error() {
+  case "$ERR_KIND" in
+    parse) die 4 "$ERR_MSG" ;;
+    dup) die 3 "$ERR_MSG" ;;
+    *) die 1 "${ERR_MSG:-scan failed}" ;;
+  esac
+}
+
+# collect_all HOME: collects rows from decisions.md plus every archive into
+# ROWS_*, and exposes the files it read: COLLECTED_ACTIVE (empty when
+# decisions.md is absent) and COLLECTED_ARCHIVES (one path per element), so a
+# caller that also needs the archive list does not list it a second time.
+collect_all() {
+  local home="$1" active="$1/decisions.md" af
+  COLLECTED_ACTIVE=""
+  COLLECTED_ARCHIVES=()
+  [[ -f "$active" ]] && COLLECTED_ACTIVE="$active"
+  while IFS= read -r af; do
+    [[ -n "$af" ]] && COLLECTED_ARCHIVES+=("$af")
+  done < <(list_archive_files "$home")
+  local files=()
+  [[ -n "$COLLECTED_ACTIVE" ]] && files+=("$COLLECTED_ACTIVE")
+  files+=("${COLLECTED_ARCHIVES[@]+"${COLLECTED_ARCHIVES[@]}"}")
+  collect_rows "${files[@]+"${files[@]}"}" || die_from_scan_error
+  find_duplicate || die_from_scan_error
+}
+
+highest_of() { # prints the highest ROWS_NUM, 0 when there are none
+  local highest=0 n
+  for n in "${ROWS_NUM[@]+"${ROWS_NUM[@]}"}"; do
+    if [[ "$((10#$n))" -gt "$((10#$highest))" ]]; then
+      highest="$n"
+    fi
+  done
+  printf '%s' "$((10#$highest))"
+}
+
+# classify_active_rows TOPN_FILE: TOPN_FILE holds topn's numbers, one per
+# line. Reads "NUM<TAB>STATUS" pairs from stdin, one per active row in file
+# order, and prints one flag per line in the same order: 1 to move, 0 to
+# keep. Tab-separated and compared whole, so a multi-word status such as
+# "assumed until the bench lands" is judged on its full text rather than its
+# first word, which would otherwise read as the bare "assumed" that keeps a
+# row active. One awk pass, so splitting kept rows from moved ones stays
+# linear even when the file or the kept set is large. The set comes in as a
+# file rather than a -v string: some awks (the BSD one among them) reject a
+# -v value that itself contains a newline.
+classify_active_rows() {
+  awk -F'\t' -v topn_file="$1" '
+    BEGIN {
+      while ((getline line < topn_file) > 0) if (line != "") keep[line + 0] = 1
+      close(topn_file)
+    }
+    {
+      num = $1 + 0; status = $2
+      if (status == "open" || status == "assumed" || status == "unformed") { print 0; next }
+      print (num in keep) ? 0 : 1
+    }
+  '
+}
+
+# --- commands ----------------------------------------------------------------
+
+cmd_check() {
+  local home="$1"
+  require_home "$home"
+  require_active_log "$home"
+  collect_all "$home"
+  printf 'ok %s rows, highest %s\n' "${#ROWS_NUM[@]}" "$(highest_of)"
+}
+
+cmd_next() {
+  local home="$1"
+  require_home "$home"
+  require_active_log "$home"
+  collect_all "$home"
+  printf '%s\n' "$(($(highest_of) + 1))"
+}
+
+cmd_find() {
+  local home="$1" n="$2" i found=0 line num
+  require_home "$home"
+  require_active_log "$home"
+  [[ "$n" =~ ^[0-9]+$ ]] || die 64 "<n> must be a whole number"
+  collect_all "$home"
+  for ((i = 0; i < ${#ROWS_NUM[@]}; i++)); do
+    if [[ "$((10#${ROWS_NUM[$i]}))" -eq "$((10#$n))" ]]; then
+      printf '%s: %s\n' "${ROWS_FILE[$i]}" "${ROWS_LINE[$i]}"
+      found=1
+    fi
+  done
+  [[ $found -eq 1 ]] || die 1 "no row numbered $n"
+  # A plain function call per row, filling SUPERSEDE_NUMS, rather than a
+  # process substitution per row: see numbers_after_upersedes.
+  for ((i = 0; i < ${#ROWS_NUM[@]}; i++)); do
+    line="${ROWS_LINE[$i]}"
+    numbers_after_upersedes "$line"
+    for num in "${SUPERSEDE_NUMS[@]+"${SUPERSEDE_NUMS[@]}"}"; do
+      if [[ "$((10#$num))" -eq "$((10#$n))" ]]; then
+        printf '%s: %s\n' "${ROWS_FILE[$i]}" "$line"
+        break
+      fi
+    done
+  done
+}
+
+cmd_rotate() {
+  local home="$1"; shift
+  local keep=$DEFAULT_KEEP threshold=$DEFAULT_THRESHOLD force=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --keep)      need_value "$1" "${2:-}"; keep="$2"; shift 2 ;;
+      --threshold) need_value "$1" "${2:-}"; threshold="$2"; shift 2 ;;
+      --force)     force=1; shift ;;
+      *) usage ;;
+    esac
+  done
+  require_home "$home"
+  [[ "$keep" =~ ^[0-9]+$ ]] || die 64 "--keep must be a whole number"
+  [[ "$threshold" =~ ^[0-9]+$ ]] || die 64 "--threshold must be a whole number of KB"
+
+  local active="$home/decisions.md"
+  local archdir="$home/decisions/archive"
+  require_active_log "$home"
+
+  local size threshold_bytes
+  size=$(wc -c < "$active" | tr -d '[:space:]')
+  threshold_bytes=$((threshold * 1024))
+  if [[ $force -eq 0 && $size -le $threshold_bytes ]]; then
+    printf 'under threshold\n'
+    return 0
+  fi
+
+  validate_header "$active" || die 5 "header missing or malformed in $active"
+
+  collect_all "$home"
+  local other_archives=("${COLLECTED_ARCHIVES[@]+"${COLLECTED_ARCHIVES[@]}"}")
+
+  # The rows that belong to the active log, in file order, so classification
+  # and the rewritten active file both walk them the same way.
+  local active_idx=() i
+  for ((i = 0; i < ${#ROWS_FILE[@]}; i++)); do
+    [[ "${ROWS_FILE[$i]}" == "$active" ]] && active_idx+=("$i")
+  done
+
+  # Not `local`: the EXIT trap below runs after cmd_rotate has returned, once
+  # a function's locals are already out of scope, so these need to survive
+  # as script-level variables for the trap to still see them.
+  tmp_topn="$home/.topn.tmp.$$"
+  tmp_active="$home/.decisions.md.tmp.$$"
+  tmp_archive_rows="$home/.decisions-archive-rows.tmp.$$"
+  tmp_archive_path=""
+  # EXIT alone: bash runs the EXIT trap when a fatal INT or TERM ends the
+  # process, then dies of that signal, so cleanup runs but the rotate does
+  # not resume with its temp files already gone. template.sh gets the same
+  # cleanup-on-signal result with explicit re-raising INT and TERM traps.
+  trap 'cleanup_tmp "$tmp_topn" "$tmp_active" "$tmp_archive_rows" "$tmp_archive_path"' EXIT
+
+  for i in "${active_idx[@]+"${active_idx[@]}"}"; do printf '%s\n' "${ROWS_NUM[$i]}"; done \
+    | sort -rn | awk -v n="$keep" 'NR<=n' > "$tmp_topn"
+
+  local pairs flags_str
+  pairs=$(for i in "${active_idx[@]+"${active_idx[@]}"}"; do printf '%s\t%s\n' "${ROWS_NUM[$i]}" "${ROWS_STATUS[$i]}"; done)
+  flags_str=$(printf '%s\n' "$pairs" | classify_active_rows "$tmp_topn")
+  rm -f "$tmp_topn"
+  local move_flags=() f
+  while IFS= read -r f; do
+    move_flags+=("$f")
+  done <<< "$flags_str"
+
+  local moved_nums=() idx
+  for ((idx = 0; idx < ${#active_idx[@]}; idx++)); do
+    [[ "${move_flags[$idx]}" -eq 1 ]] && moved_nums+=("${ROWS_NUM[${active_idx[$idx]}]}")
+  done
+
+  local kept_count=$(( ${#active_idx[@]} - ${#moved_nums[@]} ))
+
+  : > "$tmp_active"
+  : > "$tmp_archive_rows"
+  local line k=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if is_row_candidate "$line"; then
+      if [[ "${move_flags[$k]}" -eq 1 ]]; then
+        printf '%s\n' "$line" >> "$tmp_archive_rows"
+      else
+        printf '%s\n' "$line" >> "$tmp_active"
+      fi
+      k=$((k + 1))
+    else
+      printf '%s\n' "$line" >> "$tmp_active"
+    fi
+  done < "$active"
+
+  if [[ ${#moved_nums[@]} -eq 0 ]]; then
+    rm -f "$tmp_archive_rows"
+    verify_multiset_or_die \
+      --before "$active" "${other_archives[@]+"${other_archives[@]}"}" \
+      --after "$tmp_active" "${other_archives[@]+"${other_archives[@]}"}"
+    mv -f "$tmp_active" "$active" || die 7 "rename failed: $tmp_active -> $active"
+    printf 'rotated: moved 0 rows; kept %s rows in decisions.md\n' "$kept_count"
+    return 0
+  fi
+
+  local lo hi
+  lo=$(printf '%s\n' "${moved_nums[@]}" | sort -n | head -n1)
+  hi=$(printf '%s\n' "${moved_nums[@]}" | sort -n | tail -n1)
+  local lo4 hi4 archive_name archive_path
+  lo4=$(printf '%04d' "$((10#$lo))")
+  hi4=$(printf '%04d' "$((10#$hi))")
+  archive_name="decisions-${lo4}-${hi4}.md"
+  archive_path="$archdir/$archive_name"
+  if [[ -e "$archive_path" ]]; then
+    die 2 "archive file already exists: $archive_path"
+  fi
+
+  tmp_archive_path="$archdir/.$archive_name.tmp.$$"
+  mkdir -p "$archdir"
+  {
+    printf -- '---\n'
+    printf 'capstan_type: decision-archive\n'
+    printf -- '---\n\n'
+    printf '# Decisions archive\n\n'
+    printf '| # | Date | Decision | Status |\n'
+    printf '|---|------|----------|--------|\n'
+    cat "$tmp_archive_rows"
+  } > "$tmp_archive_path"
+  rm -f "$tmp_archive_rows"
+
+  verify_multiset_or_die \
+    --before "$active" "${other_archives[@]+"${other_archives[@]}"}" \
+    --after "$tmp_active" "$tmp_archive_path" "${other_archives[@]+"${other_archives[@]}"}"
+
+  # The archive is renamed into place before the active log, so a kill
+  # between the two leaves the moved rows in a file check already reads;
+  # the active log still carries them too, and that duplicate is exactly
+  # what check and a later rotate refuse on.
+  mv -f "$tmp_archive_path" "$archive_path" || die 7 "rename failed: $tmp_archive_path -> $archive_path"
+  mv -f "$tmp_active" "$active" || die 7 "rename failed: $tmp_active -> $active; decisions.md is untouched and holds every row; remove $archive_path before rerunning"
+  printf 'rotated: moved %s rows to decisions/archive/%s; kept %s rows in decisions.md\n' \
+    "${#moved_nums[@]}" "$archive_name" "$kept_count"
+}
+
+# --- main ---------------------------------------------------------------
+
+[[ $# -ge 1 ]] || usage
+case "$1" in -h|--help|help) usage ;; esac
+command="$1"; shift
+[[ $# -ge 1 ]] || usage
+case "$command" in
+  rotate) cmd_rotate "$@" ;;
+  check) cmd_check "$1" ;;
+  next) cmd_next "$1" ;;
+  find) [[ $# -ge 2 ]] || usage; cmd_find "$1" "$2" ;;
+  *) usage ;;
+esac
