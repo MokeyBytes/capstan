@@ -28,16 +28,16 @@ The words this repository uses, defined once. This describes Capstan itself; it 
 | Document home | Where the glossary, the log and the records live, and the tracker too when its surface is `tracker.md`. Defaults to `.capstan/` in the repository; configurable to a vault so they render outside it. Never both. |
 | Tracker | The surface holding slice state through to completion. Always present; the default is `tracker.md` in the Document home, and `capstan-tracker` points it elsewhere. |
 | Tracker surface | Which surface holds the Tracker for a Project: `tracker.md` in the Document home by default, or a GitHub Projects board when `capstan-tracker` names one. The choice, as against the artifact. |
-| Teardown | Emptying a Tracker surface after its Rows have moved to another one. Closes and removes; never deletes. |
-| Conforming comment | A comment whose whole body matches the merge-commit format `TRACKER-GITHUB.md` declares. A `merged` Row's issue carries exactly one; anything else on it is ordinary discussion. |
+| Teardown | Emptying a Tracker surface after its Rows have moved to another one. Closes issues and removes items; removing an item is a delete, so the operator approves it. |
+| Conforming comment | A comment whose whole body matches the merge-commit format the `capstan-board` plugin's `tracker` skill declares. A `merged` Row's issue carries exactly one; anything else on it is ordinary discussion. |
 | Restated Comment | A comment whose content is already visible in the code it sits above or beside. The thirteenth heuristic in `two-axis-review`'s smell baseline, and Capstan's own rather than Fowler's. Distinct from a Conforming comment, which is a GitHub issue comment and not code. |
 | Row | One slice's entry in the Tracker, whatever surface holds it. A table row under `tracker.md`; an issue, its status value and, at merge, a comment under a board. |
-| Setup | The `setup` skill. Configures where a Project's durable artifacts live, moves what is already there, and can be re-run. Operator-invoked, never part of an Effort. |
-| Front door | A skill the operator invokes directly, rather than one the model reaches for. Three: `effort` starts a run, `quick` runs single-slice work through one gate, `setup` configures where its artifacts live. None is a Discipline. |
+| Setup | The `setup` skill. Configures where a Project's durable artifacts live, moves what is already there, and can be re-run. The Tracker surface is configured separately, by `capstan-board`'s own `setup`. Operator-invoked, never part of an Effort. |
+| Front door | A skill the operator invokes directly, rather than one the model reaches for. Three: `effort` starts a run, `quick` runs single-slice work through one gate, `setup` configures where its artifacts live. The `capstan-board` plugin adds a fourth, its own `setup`, for the Tracker surface. None is a Discipline. |
 | Walkthrough | The one-time script that carries the operator through a manual procedure, stage by stage, capturing what comes back. Discarded with the effort's scratch once run. |
 | Spike | Throwaway work that answers one question: whether something behaves right or feels right. Never merged. |
 | Stage | One step of a Walkthrough, confirmed with the operator before it is authored. Counted in `TOTAL_STAGES`. |
-| Namespace | The `capstan:` prefix a plugin install puts on every skill and agent. Absent under a manual install. |
+| Namespace | The `capstan:` prefix a plugin install puts on every skill and agent, and `capstan-board:` on the board plugin's. Absent under a manual install. |
 | `.capstan/` | The folder holding the artifacts Capstan writes for itself: `CONTEXT.md`, `decisions.md`, `decisions/`, `tracker.md` on the default tracker surface, the effort scratch at `effort/`, and a Quick's scratch at `quick/<slug>/`. Distinct from the namespace above, which is a prefix rather than a folder. |
 | Slice | A change that can be demonstrated on its own once it is done. |
 | Layer | A horizontal cut that nothing can demonstrate until other cuts land. What a slice must never be. |
@@ -59,7 +59,7 @@ The words this repository uses, defined once. This describes Capstan itself; it 
 | Drift | A change to the repository outside the Document home since the Verified commit, committed or not. Invalidates the verification; a change confined to the Document home does not. |
 | Builder limit | `capstan-max-builders`, default 3: Builders in flight at once inside one Effort. Enforced by `capstan-claim dispatch` from `builders_in_flight` in the Claim record. |
 | Fix-dispatch limit | `capstan-max-fix-dispatches`, default 5: Fix dispatches on one slice, or on the note, across every run of an Effort. Reaching it refuses the dispatch, keeps the count, and ends the run reporting what remains. |
-| Helper | One of the four executables in `skills/effort/bin/`, admitted per 0004: `capstan-claim`, `capstan-scratch-clean`, `capstan-tracker`, `capstan-log`. Does one deterministic thing when a skill calls it; judgement stays in the skill. |
+| Helper | One of the executables admitted per 0004: `capstan-claim`, `capstan-scratch-clean` and `capstan-log` in core's `skills/effort/bin/`, and `capstan-tracker` in the `capstan-board` plugin's `tracker` skill. Does one deterministic thing when a skill calls it; judgement stays in the skill. |
 | Active log | `decisions.md` in the Document home: every `open`, `assumed` and `unformed` row plus the newest rows, the one file read whole before an effort. |
 | Archive | The files under `decisions/archive/` holding rows rotated out of the Active log. Append-only: a row there is never edited, its status included. Read by grep, not whole. |
 | Rotate | Moving rows from the Active log into a new Archive file with `capstan-log rotate`, at delivery, when the Active log passes its threshold. |
