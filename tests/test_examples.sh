@@ -8,7 +8,6 @@ source "$(dirname "$0")/lib.sh"
 JSON="$REPO_ROOT/examples/settings.deny.json"
 README="$REPO_ROOT/examples/README.md"
 
-# Every Bash rule this file's deny list must carry.
 REQUIRED_BASH=(
   "Bash(git stash *)"
   "Bash(git -C * stash)"
@@ -59,15 +58,18 @@ deny_has() { # pattern
   jq --arg p "$1" 'any(.permissions.deny[]?; . == $p)' "$JSON" 2>&1
 }
 
-# every_entry_has_valid_shape FILE checks that every deny entry is a
-# Tool(...) string, and that no Read/Edit entry anchors with a single
+# every_entry_has_valid_shape FILE returns the deny entries that are not a
+# Bash, Read or Edit rule, or that anchor a Read/Edit rule with a single
 # leading slash, which settles at the settings source rather than the
-# filesystem root a reader would expect.
+# filesystem root a reader would expect. An empty array means every entry
+# is well-formed.
 every_entry_has_valid_shape() {
-  jq -e '
-    (.permissions.deny | all(type == "string" and test("^(Bash|Read|Edit)\\(.+\\)$")))
-    and
-    (.permissions.deny | all(test("^(Read|Edit)\\(/[^/]") | not))
+  jq -c '
+    [.permissions.deny[] | select(
+      (type != "string")
+      or (test("^(Bash|Read|Edit)\\(.+\\)$") | not)
+      or (test("^(Read|Edit)\\(/[^/]"))
+    )]
   ' "$1" 2>&1
 }
 
@@ -112,7 +114,7 @@ test_every_required_file_pattern_is_present() {
 test_every_deny_entry_has_valid_shape() {
   local out
   out=$(every_entry_has_valid_shape "$JSON")
-  assert_eq "true" "$out" "a deny entry is not a Tool(...) string, or a Read/Edit rule anchors with a single leading slash"
+  assert_eq "[]" "$out" "a deny entry is not a Bash, Read or Edit rule, or a Read/Edit rule anchors with a single leading slash"
 }
 
 test_shape_check_rejects_a_misspelled_tool_name() {
@@ -120,7 +122,7 @@ test_shape_check_rejects_a_misspelled_tool_name() {
   dir=$(tmpdir)
   jq '.permissions.deny += ["Raed(.env)"]' "$JSON" > "$dir/settings.json"
   out=$(every_entry_has_valid_shape "$dir/settings.json")
-  assert_eq "false" "$out" "shape check should reject Raed(.env)"
+  assert_eq '["Raed(.env)"]' "$out" "shape check should flag Raed(.env)"
 }
 
 test_shape_check_rejects_a_non_string_entry() {
@@ -128,7 +130,7 @@ test_shape_check_rejects_a_non_string_entry() {
   dir=$(tmpdir)
   jq '.permissions.deny += [42]' "$JSON" > "$dir/settings.json"
   out=$(every_entry_has_valid_shape "$dir/settings.json")
-  assert_eq "false" "$out" "shape check should reject a non-string entry"
+  assert_eq '[42]' "$out" "shape check should flag the non-string entry 42"
 }
 
 test_shape_check_rejects_a_single_leading_slash() {
@@ -136,7 +138,7 @@ test_shape_check_rejects_a_single_leading_slash() {
   dir=$(tmpdir)
   jq '.permissions.deny += ["Read(/.env)"]' "$JSON" > "$dir/settings.json"
   out=$(every_entry_has_valid_shape "$dir/settings.json")
-  assert_eq "false" "$out" "shape check should reject Read(/.env), which anchors at the settings source, not the filesystem root"
+  assert_eq '["Read(/.env)"]' "$out" "shape check should flag Read(/.env), which anchors at the settings source, not the filesystem root"
 }
 
 test_readme_exists() {
