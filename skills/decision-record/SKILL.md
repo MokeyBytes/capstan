@@ -116,7 +116,7 @@ Never stored. Generated per recipient at send time by the `brief` skill, which o
 
 ## Never edit an accepted record
 
-When a decision changes, write a new one that supersedes the old and cross-link both. Mark the old one `superseded by NNNN` and give the new one a `supersedes NNNN` line. Update both files, every time — except an old file that has already been archived, which "Reading past a rotation" above covers instead.
+When a decision changes, write a new one that supersedes the old and cross-link both. Mark the old one `superseded by NNNN` and give the new one a `supersedes NNNN` line. Update both files, every time — except a log row that has already been archived, which "Reading past a rotation" above covers instead.
 
 This is the mechanic that keeps the set honest. Editing an accepted record destroys the history of why the direction shifted, which is usually the most valuable thing in the folder.
 

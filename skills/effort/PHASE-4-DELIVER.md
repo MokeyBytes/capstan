@@ -26,7 +26,7 @@ Begin by re-reading the world, per [`SKILL.md`](SKILL.md). `<bin>` and `<id>` ar
 
    If the run ends before step 6, for any reason, checkpoint the claim before it does. Phase 4 ends in deletion rather than a gate, so nothing else records where the note loop stopped.
 
-5. **Rotate the decision log**, now that the note is written and reviewed: `<bin>/capstan-log rotate <document home>`. This runs after the note rather than before it: step 2 hands the Courier `decisions.md` and step 3 hands the Reviewer the same file, and rotating between those steps would hand each a different active log. Run it at every document home, default or configured: Capstan writes files to a configured home the same as the default, per `SKILL.md`'s `## Document home`, it only refrains from running git there.
+5. **Rotate the decision log**, now that the note is written and reviewed: `<bin>/capstan-log rotate <document home>`. This runs after the note rather than before it: step 3 hands the note's Reviewer `decisions.md` alone to grade the Spec axis against, and rotating first could move rows the note cites out of that file (an effort can write more than 50 rows). Run it at every document home, default or configured: Capstan writes files to a configured home the same as the default, per `SKILL.md`'s `## Document home`, it only refrains from running git there.
 
    | Exit | Means | Do |
    |---|---|---|
@@ -37,7 +37,7 @@ Begin by re-reading the world, per [`SKILL.md`](SKILL.md). `<bin>` and `<id>` ar
    | 7 | Failed: a rename failed partway | Stop and report it, quoting the message. If the message names an archive to remove, removing it before a rerun is the operator's call |
    | 64 | Usage error | Fix the invocation and rerun |
 
-   At the default document home, commit the rotated `decisions.md` and any new archive file now, as ordinary unattended work, its own commit rather than folded into anything else — name it among step 7's "every commit since it". At a configured document home, they are written and left for the operator to commit, the same as the note.
+   If the rotation wrote an archive, at the default document home, commit the rotated `decisions.md` and any new archive file now, as ordinary unattended work, its own commit rather than folded into anything else — name it among step 7's "every commit since it". At a configured document home, they are written and left for the operator to commit, the same as the note.
 
 6. Delete the scratch, exact paths only:
 
