@@ -11,7 +11,7 @@ capstan_type: tracker
 | code-standards | comment-rule | merged | 4f00453 |
 | code-standards | declared-checks | merged | 243d4db |
 | external-review | bench | merged | 4725c2a |
-| external-review | board | planned | |
+| external-review | board | building | |
 | external-review | deny | merged | 9c61880 |
 | external-review | log-helper | merged | 3e25155 |
 | external-review | log-readers | merged | 92c09e9 |
