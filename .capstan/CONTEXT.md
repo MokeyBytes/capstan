@@ -8,7 +8,7 @@ The words this repository uses, defined once. This describes Capstan itself; it 
 
 | Term | Means |
 |---|---|
-| Effort | One run of work from concept to delivery, holding one claim. Three in flight is the ceiling. |
+| Effort | One piece of work from concept to delivery, spread across at least four Runs and holding one claim. Three in flight is the ceiling. |
 | Gate | A point where the run *ends* and the operator decides. Three per effort. Never a pause. |
 | Operator | The person at the gates. Never the crew, and never an agent. |
 | Crew | The five roles: Architect, Scout, Builder, Reviewer, Courier. |
