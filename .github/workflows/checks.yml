@@ -22,3 +22,52 @@ jobs:
           done
       - name: Run the checks
         run: bash tests/run.sh
+      - name: Run test_walkthrough.sh under an id -u root shim
+        run: |
+          real_id="$(command -v id)"
+          shim_dir="$(mktemp -d)"
+          cat > "$shim_dir/id" <<SHIM
+          #!/usr/bin/env bash
+          if [ "\$1" = "-u" ]; then
+          printf '0\n'
+          else
+          exec "$real_id" "\$@"
+          fi
+          SHIM
+          chmod +x "$shim_dir/id"
+          if output="$(PATH="$shim_dir:$PATH" bash tests/test_walkthrough.sh)"; then
+            status=0
+          else
+            status=$?
+          fi
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            echo "test_walkthrough.sh exited $status under the id -u shim" >&2
+            exit 1
+          fi
+          count="$(printf '%s\n' "$output" | grep -c 'skipped (root)' || true)"
+          if [ "$count" -ne 1 ]; then
+            echo "expected exactly one 'skipped (root)' line, got $count" >&2
+            exit 1
+          fi
+
+  root:
+    # Runs the whole suite as root. Root ignores file modes, so
+    # test_write_fails_on_readonly_env skips here (it needs a mode a
+    # non-root user can't override) and test_interrupted_write_leaves_no_temp_file
+    # still runs.
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Install git, bash and the test tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bash git jq shellcheck findutils coreutils sed gawk diffutils ca-certificates
+      - uses: actions/checkout@v4
+      - name: Trust the checkout as root
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Confirm the container runs as root
+        run: '[ "$(id -u)" = "0" ]'
+      - name: Run the checks as root
+        run: bash tests/run.sh
