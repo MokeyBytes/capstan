@@ -20,8 +20,8 @@
 # A copied turn is credited to whichever argument first carries it, so a
 # forked file's own span never includes time that already belongs to the
 # session it was forked from. Ownership follows argument order, not
-# chronology: pass session files oldest-created first, or an earlier fork
-# can end up crediting a later original's time to itself.
+# chronology: pass session files oldest-created first, or a fork passed
+# before its original takes the original's copied turns.
 #
 # Only `type=="assistant"` lines count. A model of `<synthetic>` is skipped:
 # it is a placeholder line, not a real model call. One API turn can be split
@@ -42,22 +42,27 @@
 # its known components and reported as partial when the session actually
 # used the unpriced component.
 #
-# A turn is also marked with `check: <reason>`, distinct from "partial",
+# A turn is also marked with `doubt: <reason>`, distinct from "partial",
 # when any of its lines carries `usage.speed` set to something other than
 # "standard", `usage.inference_geo` set to "us", or a non-empty
 # `usage.iterations` array whose summed token fields (read the same five
 # fields directly off each element, no nested `usage` inside it) disagree
 # with the turn's own top-level usage. None of those change the token
 # counts or the price this script applies; "partial" stays reserved for a
-# component this script could not price at all. `check: <reason>` marks a
+# component this script could not price at all. `doubt: <reason>` marks a
 # total that was fully priced but may be priced at the wrong rate or count,
-# needing a second look rather than being trusted at face value.
+# needing a second look rather than being trusted at face value. A row can
+# carry a doubt even when its model is fully unpriced: the doubt survives,
+# naming any element's own `model` where one is present, since the
+# uncounted tokens sitting on that element belong to a model no row
+# reports.
 #
 # Exit codes:
 #   0  done
 #   1  an assistant line is not valid JSON, or is missing message.id,
-#      message.model, message.usage, or one of message.usage's token
-#      fields
+#      message.model, message.usage, one of message.usage's token fields,
+#      or one of those same token fields on an element of
+#      message.usage.iterations
 #   2  no transcript found, or no pricing file found
 #   64 usage error
 #
@@ -158,7 +163,7 @@ def toks: [.input_tokens, .output_tokens, .cache_read_input_tokens, .cache_creat
 def toklabels: ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation.ephemeral_5m_input_tokens", "cache_creation.ephemeral_1h_input_tokens"];
 def missing_labels(prefix):
   (toks) as $t
-  | [range(0; 5) | select($t[.] == null) | prefix + toklabels[.]];
+  | ([$t, toklabels] | transpose | map(select(.[0] == null) | prefix + .[1]));
 
 input_line_number as $lineno
 | . as $line
@@ -166,6 +171,8 @@ input_line_number as $lineno
   else
     try (
       ($line | fromjson) as $obj
+      | ($obj.message.usage | missing_labels("message.usage.")) as $top_missing
+      | (($obj.message.usage.iterations // []) | map(missing_labels("message.usage.iterations[].")) | flatten) as $iter_missing
       | if $obj.type != "assistant" then "SKIP"
         elif $obj.message.model == "<synthetic>" then "SKIP"
         elif ($obj.message == null) or ($obj.message.usage == null) then
@@ -174,14 +181,10 @@ input_line_number as $lineno
           "ERR\t\($lineno)\tassistant line missing message.model"
         elif ($obj.message.id == null) then
           "ERR\t\($lineno)\tassistant line missing message.id"
-        elif (($obj.message.usage | missing_labels("message.usage.")) | length) > 0 then
-          "ERR\t\($lineno)\tassistant line missing " + (($obj.message.usage | missing_labels("message.usage.")) | first)
-        elif (
-          ($obj.message.usage.iterations // []) as $iters
-          | ($iters | map(missing_labels("message.usage.iterations[].")) | flatten | length) > 0
-        ) then
-          "ERR\t\($lineno)\tassistant line missing " +
-            (($obj.message.usage.iterations // []) | map(missing_labels("message.usage.iterations[].")) | flatten | first)
+        elif ($top_missing | length) > 0 then
+          "ERR\t\($lineno)\tassistant line missing " + ($top_missing | first)
+        elif ($iter_missing | length) > 0 then
+          "ERR\t\($lineno)\tassistant line missing " + ($iter_missing | first)
         else
           ( ($obj.message.usage.speed // null) as $speed
           | ($obj.message.usage.inference_geo // null) as $geo
@@ -189,15 +192,21 @@ input_line_number as $lineno
           | ($obj.message.usage | toks) as $top
           | (if ($iters | length) > 0 then
                ( ($iters | map(toks)) as $iter_toks
-               | ([0, 1, 2, 3, 4] | map(. as $i | $iter_toks | map(.[$i]) | add)) as $isum
+               | ($iter_toks | transpose | map(add)) as $isum
                | $isum != $top
                )
              else false
              end) as $iter_mismatch
+          | ($iters | map(.model? // empty) | unique) as $iter_models
           | ([
               (if ($speed != null and $speed != "standard") then "fast mode" else empty end),
               (if $geo == "us" then "US-only inference" else empty end),
-              (if $iter_mismatch then "iterations disagree" else empty end)
+              (if $iter_mismatch then
+                 (if ($iter_models | length) > 0 then
+                    "iterations disagree (" + ($iter_models | join(", ")) + ")"
+                  else "iterations disagree"
+                  end)
+               else empty end)
             ]) as $flags
           | "OK\t" + ({
               id: $obj.message.id,
@@ -345,7 +354,7 @@ def parseprice: if . == "" then null else tonumber end;
           | . as $row | ($row.partial_fields | map(. + " unpriced for " + $row.model)))
       | flatten),
     flag_notes: ($priced
-      | map(select(.fully_unpriced | not) | select((.note_reasons | length) > 0)
+      | map(select((.note_reasons | length) > 0)
           | . as $row | ($row.note_reasons | map(. + " for " + $row.model)))
       | flatten)
   }
@@ -353,25 +362,25 @@ def parseprice: if . == "" then null else tonumber end;
 
 # shellcheck disable=SC2016
 FORMAT='
-# "partial" and "check" never mix into one label: "partial" means a
-# component this script could not price at all, and "check: <reason>"
+# "partial" and "doubt" never mix into one label: "partial" means a
+# component this script could not price at all, and "doubt: <reason>"
 # means the row was fully priced but a doubt (fast mode, US-only inference,
 # or disagreeing iterations) says the rate or count it priced against may
 # not be what was actually billed. A row or the total can carry both at
-# once, as two separate parenthetical clauses.
-def notes_suffix(partial_parts; check_parts):
+# once, joined into one parenthetical by "; ".
+def notes_suffix(partial_parts; doubt_parts):
   (if (partial_parts | length) > 0 then ["partial: " + (partial_parts | join("; "))] else [] end) as $p
-  | (if (check_parts | length) > 0 then ["check: " + (check_parts | join("; "))] else [] end) as $c
-  | ($p + $c) as $clauses
+  | (if (doubt_parts | length) > 0 then ["doubt: " + (doubt_parts | join("; "))] else [] end) as $d
+  | ($p + $d) as $clauses
   | if ($clauses | length) == 0 then "" else " (" + ($clauses | join("; ")) + ")" end;
 def rowcost:
   (.partial_fields | map(. + " unpriced")) as $pf
-  | if .fully_unpriced then "unpriced"
+  | if .fully_unpriced then "unpriced" + notes_suffix([]; .note_reasons)
     else (.cost | tostring) + notes_suffix($pf; .note_reasons)
     end;
 (.rows[] | [.model, (.input|tostring), (.output|tostring), (.cw5m|tostring), (.cw1h|tostring), (.cread|tostring), rowcost]),
 (["TOTAL", (.total_input|tostring), (.total_output|tostring), (.total_cw5m|tostring), (.total_cw1h|tostring), (.total_cread|tostring),
-   (if .all_unpriced then "unpriced"
+   (if .all_unpriced then "unpriced" + notes_suffix([]; .flag_notes)
     else
       (.total_cost|tostring) + notes_suffix(
         (if (.unpriced_models|length) > 0 then ["unpriced " + (.unpriced_models|join(","))] else [] end) + .partial_notes;

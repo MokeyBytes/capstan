@@ -211,10 +211,12 @@ test_reversed_argument_order_changes_which_argument_owns_the_shared_turn() {
 
 test_argument_that_owns_no_kept_turn_prints_none_not_a_blank_line() {
   # ses0003.jsonl carries only a verbatim copy of msg_fixtureA, already
-  # owned by ses0001 when it comes first. group_by(.owner) alone never
-  # produces a group for an owner with zero turns, so ses0003 must still
-  # get a span line, printing "none" rather than being dropped from the
-  # output entirely.
+  # owned by ses0001 when it comes first. Building the span list by
+  # iterating every argument index, rather than grouping the deduped
+  # turns by owner, is what guarantees ses0003 still gets a span line even
+  # though it owns zero turns: a group-by would never produce a group for
+  # an owner with nothing in it. So ses0003 prints "none" rather than
+  # being dropped from the output entirely.
   local out
   out=$("$SESSION_USAGE" "$FIXTURES/ses0001.jsonl" "$FIXTURES/ses0002.jsonl" "$FIXTURES/ses0003.jsonl")
   assert_contains "$out" "$(printf 'first_timestamp\t%s\tnone' "ses0003")" "an argument that owns no turn still prints its first_timestamp line, as none"
@@ -275,56 +277,55 @@ test_one_good_argument_and_one_empty_directory_dies_naming_the_empty_one() {
   assert_not_contains "$out" "TOTAL" "no total is printed once one argument yields no transcript"
 }
 
-test_fast_mode_prints_as_check_not_partial() {
+test_fast_mode_prints_as_doubt_not_partial() {
   local fixture pricing out
   fixture=$(tmpdir)/fast.jsonl
   printf '{"type":"assistant","message":{"id":"msg_fast","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"speed":"fast","cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
   pricing=$(pricing_file "$(printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20')")
   out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
-  assert_contains "$out" "(check: fast mode)" "a turn priced at standard rates but run at usage.speed other than standard prints as check, not partial: nothing is left unpriced"
-  assert_contains "$out" "check: fast mode for claude-opus-5" "the total names the model that ran fast"
+  assert_contains "$out" "(doubt: fast mode)" "a turn priced at standard rates but run at usage.speed other than standard prints as doubt, not partial: nothing is left unpriced"
+  assert_contains "$out" "doubt: fast mode for claude-opus-5" "the total names the model that ran fast"
   assert_not_contains "$out" "partial" "fast mode alone never carries the word partial: nothing here is unpriced"
 }
 
-test_us_only_inference_prints_as_check_not_partial() {
+test_us_only_inference_prints_as_doubt_not_partial() {
   local fixture pricing out
   fixture=$(tmpdir)/geo.jsonl
   printf '{"type":"assistant","message":{"id":"msg_geo","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"inference_geo":"us","cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
   pricing=$(pricing_file "$(printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20')")
   out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
-  assert_contains "$out" "(check: US-only inference)" "a turn billed at the 1.1x us surcharge prints as check, since this script does not apply the surcharge but nothing is unpriced"
-  assert_contains "$out" "check: US-only inference for claude-opus-5" "the total names the model"
+  assert_contains "$out" "(doubt: US-only inference)" "a turn billed at the 1.1x us surcharge prints as doubt, since this script does not apply the surcharge but nothing is unpriced"
+  assert_contains "$out" "doubt: US-only inference for claude-opus-5" "the total names the model"
   assert_not_contains "$out" "partial" "US-only inference alone never carries the word partial"
 }
 
-test_iterations_disagreeing_with_top_level_usage_prints_as_check_not_partial() {
+test_iterations_disagreeing_with_top_level_usage_prints_as_doubt_not_partial() {
   # A turn whose top-level usage is all zero while its iterations array
   # carries real tokens. Billing may or may not follow iterations, so the
-  # total is marked check rather than trusted at face value either way.
+  # total is marked doubt rather than trusted at face value either way.
   # Each iteration element carries these five fields directly, the shape
   # real transcripts use: no nested "usage" object inside the element.
   local fixture pricing out
   fixture=$(tmpdir)/iter.jsonl
-  printf '{"type":"assistant","message":{"id":"msg_iter","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"iterations":[{"type":"message","input_tokens":100,"output_tokens":50,"cache_read_input_tokens":994000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  printf '{"type":"assistant","message":{"id":"msg_iter","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"iterations":[{"type":"message","input_tokens":100,"output_tokens":50,"cache_read_input_tokens":994000,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
   pricing=$(pricing_file "$(printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20')")
   out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
-  assert_contains "$out" "(check: iterations disagree)" "top-level usage of all zero against a non-empty iterations array prints as check"
-  assert_contains "$out" "check: iterations disagree for claude-opus-5" "the total names the model"
-  assert_not_contains "$out" "0 (partial" "the mismatched turn never prints a bare \$0 with no flag at all"
+  assert_contains "$out" "$(printf 'claude-opus-5\t0\t0\t0\t0\t0\t0 (doubt: iterations disagree)')" "the exact row: the turn's own top-level usage is all zero, priced at 0, and the doubt clause is never dropped"
+  assert_contains "$out" "doubt: iterations disagree for claude-opus-5" "the total names the model"
 }
 
 test_iterations_equal_to_top_level_usage_produce_no_flag() {
   # The common real-transcript case: every iteration's five fields sum to
   # exactly the turn's own top-level usage. This must never print as
-  # check or partial, since round 4's guessed schema (iterations nested
+  # doubt or partial, since round 4's guessed schema (iterations nested
   # under their own "usage" key, which real transcripts never carry)
   # flagged every one of these as disagreeing.
   local fixture pricing out
   fixture=$(tmpdir)/iter_agree.jsonl
-  printf '{"type":"assistant","message":{"id":"msg_iter_agree","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"iterations":[{"type":"message","input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  printf '{"type":"assistant","message":{"id":"msg_iter_agree","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"iterations":[{"type":"message","input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
   pricing=$(pricing_file "$(printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20')")
   out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
-  assert_not_contains "$out" "check" "an iterations array that agrees with the top-level usage is never flagged"
+  assert_not_contains "$out" "doubt" "an iterations array that agrees with the top-level usage is never flagged"
   assert_not_contains "$out" "partial" "an iterations array that agrees with the top-level usage never prints as partial either"
   assert_contains "$out" "$(printf 'claude-opus-5\t100\t50\t0\t0\t0\t0.0014')" "the row prices cleanly with no note at all"
 }
@@ -335,10 +336,31 @@ test_iterations_element_missing_a_token_field_is_refused_not_summed_as_zero() {
   # usage field: it must never fall back to 0 inside the sum.
   local fixture out code
   fixture=$(tmpdir)/iter_missing.jsonl
-  printf '{"type":"assistant","message":{"id":"msg_iter_missing","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"iterations":[{"type":"message","input_tokens":100,"output_tokens":50,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  printf '{"type":"assistant","message":{"id":"msg_iter_missing","model":"claude-opus-5","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"iterations":[{"type":"message","input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
   out=$("$SESSION_USAGE" "$fixture" 2>&1) && code=0 || code=$?
   assert_exit 1 "$code" "an iteration element missing cache_read_input_tokens is refused, not summed as zero"
   assert_contains "$out" "message.usage.iterations[].cache_read_input_tokens" "the refusal names the missing field inside the iteration element"
+}
+
+test_fallback_element_keeps_the_doubt_on_a_fully_unpriced_row_and_names_both_models() {
+  # The real fallback shape (confirmed against a transcript under
+  # ~/.claude/projects/): a turn's own message.model can be a fallback
+  # model unlisted in pricing.tsv, so the row is fully unpriced. Its
+  # iterations array holds a "message" element (the model that was asked
+  # for, here claude-fable-5-1) and a "fallback_message" element (the
+  # model that actually answered, here claude-opus-4-8, matching the
+  # turn's own top-level usage). Each element carries its own model, all
+  # five token fields, and cache_creation_input_tokens. Being fully
+  # unpriced must not swallow the iterations-disagree doubt: the tokens
+  # sitting on the "message" element are real and belong to a model no
+  # row reports.
+  local fixture pricing out
+  fixture=$(tmpdir)/fallback.jsonl
+  printf '{"type":"assistant","message":{"id":"msg_fallback","model":"claude-opus-4-8","role":"assistant","content":[],"stop_reason":"end_turn","usage":{"input_tokens":32,"output_tokens":1029,"cache_creation_input_tokens":0,"cache_read_input_tokens":236258,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":2492},"iterations":[{"type":"message","model":"claude-fable-5-1","input_tokens":32,"output_tokens":713,"cache_read_input_tokens":273587,"cache_creation_input_tokens":2492,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":2492}},{"type":"fallback_message","model":"claude-opus-4-8","input_tokens":32,"output_tokens":1029,"cache_read_input_tokens":236258,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}]}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  pricing=$(pricing_file)
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
+  assert_contains "$out" "unpriced (doubt: iterations disagree (claude-fable-5-1, claude-opus-4-8))" "a fully unpriced row keeps its iterations-disagree doubt, naming both elements' models"
+  assert_contains "$out" "doubt: iterations disagree (claude-fable-5-1, claude-opus-4-8) for claude-opus-4-8" "the total carries the same doubt, naming which row it came from"
 }
 
 run_tests
