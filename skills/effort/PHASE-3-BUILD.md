@@ -28,7 +28,7 @@ Begin by re-reading the world, per [`SKILL.md`](SKILL.md). `<bin>` and `<id>` be
 
    - **The scratch at `<working copy>/.capstan/effort/` is gitignored, so it does not exist inside any worktree.** Give every Builder the absolute path to the spec, the plan, and the Scout findings in the main working copy, and the resolved document home, and say the scratch is not in its worktree. A Builder that cannot find its brief will invent one; nor can it resolve the document home itself.
    - Be explicit about which paths are in its worktree and which are in the main copy. The same file exists at two paths and they are not interchangeable.
-   - Move that slice's row in the Tracker to `building` as you dispatch it — `tracker.md` in the document home when `capstan-tracker` is unset, the board `TRACKER-GITHUB.md` describes when it names one. A slice dropped at any point in this phase moves its row to `dropped` — never delete a row, dropped or merged.
+   - Move that slice's row in the Tracker to `building` as you dispatch it — `tracker.md` in the document home when `capstan-tracker` is unset, the board the `capstan-board:tracker` skill describes when it names one. A slice dropped at any point in this phase moves its row to `dropped` — never delete a row, dropped or merged.
 
 3. The three-effort ceiling is about efforts; the builder limit is about slices inside one. A one-slice plan means one Builder, and that is a correct outcome rather than a failure to parallelise. A frontier wider than the limit goes out in the order the Graph's edges make useful, and the rest waits for a return. Nothing here polls or schedules: a Builder returning is what frees a place, and the run still ends at the gate.
 

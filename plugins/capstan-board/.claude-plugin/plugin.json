@@ -1,0 +1,20 @@
+{
+  "name": "capstan-board",
+  "displayName": "Capstan Board",
+  "version": "1.0.0",
+  "description": "The GitHub Projects v2 tracker surface for Capstan: reads and writes slice state on a board instead of tracker.md.",
+  "author": {
+    "name": "BytesNation",
+    "url": "https://github.com/BytesNation"
+  },
+  "repository": "https://github.com/MokeyBytes/capstan",
+  "license": "MIT",
+  "keywords": [
+    "tracker",
+    "github-projects",
+    "capstan"
+  ],
+  "dependencies": [
+    "capstan"
+  ]
+}

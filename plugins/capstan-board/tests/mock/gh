@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# tests/mock/gh: stands in for gh under tests. Never reaches the network.
+# plugins/capstan-board/tests/mock/gh: stands in for gh under tests. Never reaches the network.
 #
 # It imitates the two calls capstan-tracker makes, from fixtures:
 #   gh project item-list N --owner O --format json [--limit N] [--jq EXPR]

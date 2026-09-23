@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Tests for skills/effort/bin/capstan-tracker against tests/mock/gh. No
-# network: the mock is first on PATH for every case, and every case runs in
-# its own tmpdir. Fixtures come from tests/fixtures/make-board.sh.
+# Tests for plugins/capstan-board/skills/tracker/bin/capstan-tracker against
+# this plugin's own mock/gh. No network: the mock is first on PATH for every
+# case, and every case runs in its own tmpdir. Fixtures come from
+# fixtures/make-board.sh, beside this file.
 #
 # The awk conditions handed to count() are meant literally, so SC2016 is off
 # for this file. lib.sh is not followed because run.sh lints without -x.
 # shellcheck disable=SC2016,SC1091
-source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../../../tests/lib.sh"
 
-PATH="$REPO_ROOT/tests/mock:$PATH"
+PLUGIN_ROOT="$REPO_ROOT/plugins/capstan-board"
+PATH="$PLUGIN_ROOT/tests/mock:$PATH"
 export PATH
-FIX="$REPO_ROOT/tests/fixtures"
-TRACKER="$BIN/capstan-tracker"
+FIX="$PLUGIN_ROOT/tests/fixtures"
+TRACKER="$PLUGIN_ROOT/skills/tracker/bin/capstan-tracker"
 TAB=$'\t'
 ROW_HEADER="effort${TAB}slice${TAB}status${TAB}commit${TAB}issue${TAB}url${TAB}note"
 

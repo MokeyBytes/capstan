@@ -102,7 +102,7 @@ Phases 2, 3 and 4 never ask this question. Where phase 1 left an `assumed` defau
 
 The Tracker is the surface that holds slice state through to completion. Read the key `capstan-tracker` from `<working copy>/CLAUDE.md` and `<working copy>/AGENTS.md` — the same two files, addressed by absolute path against the working copy the Precondition section establishes, never a user-level file of the same name — before resolving the term anywhere else. Both files carrying it with a different value stops the phase, and says so, the same disagreement case `## Document home` stops for.
 
-Unset means `tracker.md` in the document home, described below, which is what every existing project has and what none of them must change. Set, its value is scheme-prefixed: `github:<owner>/<repo>#<project-number>`. Read [`TRACKER-GITHUB.md`](TRACKER-GITHUB.md) when the key names a GitHub surface: it is how the tracker runs when GitHub, not a markdown table, holds slice state. A value that is neither unset nor a recognised scheme — an unrecognised scheme, since a later surface may add one, or a malformed `github:` value — stops the phase, and says so: proceeding would mean guessing which surface holds slice state.
+Unset means `tracker.md` in the document home, described below, which is what every existing project has and what none of them must change. Set, its value is scheme-prefixed: `github:<owner>/<repo>#<project-number>`. A `github:` value means invoke the `capstan-board:tracker` skill: it is how the tracker runs when GitHub, not a markdown table, holds slice state. If that skill cannot be loaded, stop and say `surface not installed: install capstan-board@bytesnation`, then reload plugins and re-run the phase that stopped. `/capstan-board:setup` is not the next step here — that skill is only for changing which surface is in force, and every project reaching this stop already has one configured. A configured `github:` tracker with the board plugin absent is not a case to guess past. A value that is neither unset nor a recognised scheme — an unrecognised scheme, since a later surface may add one, or a malformed `github:` value — also stops the phase, and says so: proceeding would mean guessing which surface holds slice state.
 
 Unset, `tracker.md` is the fourth durable artifact, alongside the glossary, the log and the records, and it lives in the document home and relocates with it under either document-home configuration, the same as its three neighbours. Under a GitHub surface there is no `tracker.md` to relocate: the tracker lives on the board instead, and the document home holds three durable artifacts, not four.
 
@@ -139,6 +139,8 @@ Two more keys, read from the same two files as the three above, bare lines, chec
 `capstan-claim dispatch` enforces both from the counts held in `CLAIM.md`, so they survive a run boundary. Reaching one refuses the dispatch, leaves every count as it was, and prints the state; `PHASE-3-BUILD.md` and `PHASE-4-DELIVER.md` say what the run does then. The defaults are deliberately low: three Builders is as many returns as one Architect reads without one of them waiting unreviewed, and five fix rounds on one slice is past the point where the design question in `PHASE-3-BUILD.md` has fired three times.
 
 ## Before you start
+
+Check the tracker before anything else, so a stop here leaves no lock: if `capstan-tracker` names a GitHub surface and `capstan-board:tracker` is not among the skills this session lists as available, stop as `## Tracker` above says.
 
 **Take the claim.** The helpers this skill runs live in `bin/` beside this file. Resolve that folder to an absolute path from wherever this skill was loaded, and call it `<bin>` below; every phase file uses the same name. Nothing about the claim is checked and then written by hand: one command takes the lock, and it either succeeds for you or says who holds it.
 
@@ -295,7 +297,7 @@ Prepare the change and run it in check mode. Present the diff at gate three. Aft
       review/       <slice>-<n>.md for a Reviewer's return, verify-<n>.md for a verify return
 
 <this skill>/
-  bin/              capstan-claim, capstan-scratch-clean, capstan-tracker, capstan-log. `--help` on each lists its commands and exit codes.
+  bin/              capstan-claim, capstan-scratch-clean, capstan-log. `--help` on each lists its commands and exit codes.
 ```
 
 This skill ensures `.gitignore` carries `.capstan/effort/`, replacing an older scratch line with it where one is already there. `setup` ensures the same line on its first run. The scratch never enters git history, which is what keeps repositories from accumulating stale planning material. The entry stays bare: a `.gitignore` line is relative to the repository root.
@@ -321,4 +323,4 @@ Reviewers check Builders by construction, and you check Reviewers and Couriers b
 
 No router agent, no scheduler, no cron sweep, no JSON schemas, no hooks. If a piece of this workflow starts wanting code to keep it alive, that is the signal to simplify it instead. Every line of code in an operating layer is a line that eventually gets maintained or abandoned.
 
-The four helpers in `bin/` are the bounded exception, per [0004](../../.capstan/decisions/0004-admit-a-thin-executable-layer.md). Each replaces a rule the decision log shows prose failing to hold, each does one deterministic thing, and each is tested in `tests/` and by CI. Judgement stays in these files; a helper only takes a lock, counts, enumerates, rotates, or deletes an exact path. A fifth earns its place the same way, with the failure it answers recorded in the log first.
+The three helpers in `bin/` are the bounded exception, per [0004](../../.capstan/decisions/0004-admit-a-thin-executable-layer.md). Each replaces a rule the decision log shows prose failing to hold, each does one deterministic thing, and each is tested in `tests/` and by CI. Judgement stays in these files; a helper only takes a lock, counts, enumerates, rotates, or deletes an exact path. A fourth helper in this list earns its place the same way, with the failure it answers recorded in the log first. `capstan-board`'s own `bin/capstan-tracker` is a separate helper living in that plugin, never counted against this list: it reads a GitHub board, or diffs one against a `tracker.md`, completely or not at all, the same admission rule applied on its own surface.

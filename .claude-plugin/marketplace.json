@@ -12,6 +12,13 @@
       "description": "For work you want done properly rather than quickly. Plans before building, builds in reviewable pieces, and reviews independently. Holds the work steady until you say go.",
       "category": "engineering",
       "keywords": ["agents", "crew", "vertical-slices", "test-first", "code-review"]
+    },
+    {
+      "name": "capstan-board",
+      "source": "./plugins/capstan-board",
+      "description": "The GitHub Projects v2 tracker surface for Capstan: reads and writes slice state on a board instead of tracker.md.",
+      "category": "engineering",
+      "keywords": ["tracker", "github-projects", "capstan"]
     }
   ]
 }

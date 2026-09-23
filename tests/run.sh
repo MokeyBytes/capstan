@@ -18,17 +18,17 @@ printf 'bash: %s (%s)\n' "$BASH" "$BASH_VERSION"
 
 status=0
 if ! command -v jq >/dev/null 2>&1; then
-  printf '== jq is not installed: tests/mock/gh needs it to apply --jq, so tests/test_tracker.sh cannot run\n'
+  printf '== jq is not installed: mock/gh needs it to apply --jq, so plugins/capstan-board/tests/test_tracker.sh cannot run\n'
   status=1
 fi
-for f in tests/test_*.sh; do
+for f in tests/test_*.sh plugins/*/tests/test_*.sh; do
   printf '== %s\n' "$f"
   "$BASH" "$f" || status=1
 done
 
 if command -v shellcheck >/dev/null 2>&1; then
   printf '== shellcheck\n'
-  if shellcheck -s bash skills/effort/bin/* skills/walkthrough/template.sh bench/bin/* tests/*.sh tests/mock/*; then
+  if shellcheck -s bash skills/effort/bin/* skills/walkthrough/template.sh bench/bin/* tests/*.sh plugins/*/skills/*/bin/* plugins/*/tests/*.sh plugins/*/tests/mock/*; then
     printf '  ok   shellcheck\n'
   else
     status=1
@@ -37,7 +37,7 @@ else
   printf '== shellcheck not installed, skipped\n'
 fi
 
-for f in skills/effort/bin/* skills/walkthrough/template.sh bench/bin/*; do
+for f in skills/effort/bin/* skills/walkthrough/template.sh bench/bin/* plugins/*/skills/*/bin/*; do
   bash -n "$f" || status=1
 done
 
