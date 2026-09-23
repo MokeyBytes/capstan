@@ -15,7 +15,7 @@ capstan_type: tracker
 | external-review | deny | merged | 9c61880 |
 | external-review | log-helper | building | |
 | external-review | log-readers | planned | |
-| external-review | quick | building | |
+| external-review | quick | merged | 960e9a2 |
 | external-review | readme | planned | |
 | external-review | root-test | merged | 7f0b587 |
 | github-surface | docs | merged | 04d33d6 |
