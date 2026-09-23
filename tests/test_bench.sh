@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Behaviour of bench/bin/session-usage: dedupe by message.id, subagent
-# tokens included, known models priced, unknown models never $0, and a
-# malformed line named and refused rather than silently zeroed.
+# Behaviour of bench/bin/session-usage: dedupe by message.id keeping the
+# stop_reason line's usage (or the per-field maximum for an interrupted
+# turn), subagent tokens included, known models and known cost components
+# priced, an unpriced model or component never printed as $0, and a
+# malformed or incomplete line named and refused rather than silently
+# zeroed or merged.
 # shellcheck source=tests/lib.sh
 source "$(dirname "$0")/lib.sh"
 
@@ -11,18 +14,52 @@ FIXTURES="$REPO_ROOT/tests/fixtures/sessions"
 command -v jq >/dev/null 2>&1 || { printf '%s: jq is not installed, skipped\n' "$(basename "$0")"; exit 0; }
 
 test_dedupes_repeated_message_id_and_sums_subagent_tokens() {
+  # Own pricing file rather than the shipped bench/pricing.tsv, which the
+  # protocol tells the operator to edit at every pre-flight.
+  #
   # By hand from tests/fixtures/sessions/ses0001.jsonl and its subagents/
-  # file: msg_fixtureA appears twice (same id) and must count once.
-  #   sonnet: msg_fixtureA (input 1,000,000 output 500,000) once, plus the
-  #     subagent's msg_fixtureSub1 (input 500,000 output 250,000)
-  #     = input 1,500,000, output 750,000
-  #   opus: msg_fixtureB only = input 2,000,000, output 100,000,
-  #     cache_write_5m 500,000, cache_read 1,000,000
-  local out
-  out=$("$SESSION_USAGE" "$FIXTURES/ses0001.jsonl")
-  assert_contains "$out" "$(printf 'claude-sonnet-5\t1500000\t750000\t0\t0\t0\t10.5')" "sonnet totals, deduped and including the subagent"
+  # file:
+  #   msg_fixtureA appears twice with identical usage (same id) and must
+  #     count once: input 1,000,000, output 500,000.
+  #   msg_fixtureSub1 (subagent, one line): input 500,000, output 250,000.
+  #   msg_fixtureSub2 (subagent, three lines of one split turn): output
+  #     rises 3, then 7, then 16 on the line that carries stop_reason.
+  #     The kept usage is the stop_reason line's own: input 200,000,
+  #     output 16. Keeping the first line, as before this fix, would have
+  #     kept output 3.
+  #   sonnet total: input 1,000,000 + 500,000 + 200,000 = 1,700,000;
+  #     output 500,000 + 250,000 + 16 = 750,016.
+  #   msg_fixtureB (opus, one line): input 2,000,000, output 100,000,
+  #     cache_write_5m 500,000, cache_read 1,000,000.
+  #   costs at $2/$10/mtok (sonnet) and $4/$20/$5/$0.20/mtok (opus):
+  #     sonnet 1.7*2 + 0.750016*10 = 10.90016
+  #     opus   2*4 + 0.1*20 + 0.5*5 + 1*0.2 = 12.7
+  #     total  23.60016
+  local pricing out
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-opus-5\t4.00\t20.00\t5.00\t\t0.20\n' >> "$pricing"
+  printf 'claude-sonnet-5\t2.00\t10.00\t2.50\t\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$FIXTURES/ses0001.jsonl")
+  assert_contains "$out" "$(printf 'claude-sonnet-5\t1700000\t750016\t0\t0\t0\t10.90016')" "sonnet totals: deduped, subagent included, split-turn output taken from the stop_reason line"
   assert_contains "$out" "$(printf 'claude-opus-5\t2000000\t100000\t500000\t0\t1000000\t12.7')" "opus totals"
-  assert_contains "$out" "$(printf 'TOTAL\t3500000\t850000\t500000\t0\t1000000\t23.2')" "grand total across both models"
+  assert_contains "$out" "$(printf 'TOTAL\t3700000\t850016\t500000\t0\t1000000\t23.60016')" "grand total across both models"
+}
+
+test_interrupted_turn_falls_back_to_the_maximum_of_each_field() {
+  # A turn with no stop_reason line at all: the group's per-field maximum
+  # is kept rather than the first line, since no line marks itself final.
+  local fixture pricing out
+  fixture=$(tmpdir)/interrupted.jsonl
+  cat > "$fixture" <<'JSONL'
+{"type":"assistant","message":{"id":"msg_interrupted","model":"claude-sonnet-5","role":"assistant","content":[{"type":"text","text":"a"}],"usage":{"input_tokens":100,"output_tokens":3,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T10:00:00.000Z"}
+{"type":"assistant","message":{"id":"msg_interrupted","model":"claude-sonnet-5","role":"assistant","content":[{"type":"text","text":"ab"}],"usage":{"input_tokens":100,"output_tokens":7,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T10:00:01.000Z"}
+JSONL
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-sonnet-5\t2.00\t10.00\t2.50\t\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
+  assert_contains "$out" "$(printf 'claude-sonnet-5\t100\t7\t0\t0\t0')" "no stop_reason line in the group: output is the max across lines (7), not the first (3)"
 }
 
 test_synthetic_lines_are_skipped_not_errored() {
@@ -47,7 +84,7 @@ test_first_and_last_timestamp_span_the_subagent() {
   local out
   out=$("$SESSION_USAGE" "$FIXTURES/ses0001.jsonl")
   assert_contains "$out" "$(printf 'first_timestamp\t2026-09-20T10:00:00.000Z')"
-  assert_contains "$out" "$(printf 'last_timestamp\t2026-09-20T10:10:00.000Z')" "the subagent's line is the latest timestamp in the session"
+  assert_contains "$out" "$(printf 'last_timestamp\t2026-09-20T10:11:02.000Z')" "the subagent's split turn's last line is the latest timestamp in the session"
 }
 
 test_fails_loudly_naming_the_missing_field() {
@@ -57,14 +94,56 @@ test_fails_loudly_naming_the_missing_field() {
   assert_contains "$out" "message.usage" "the refusal names the missing field"
 }
 
+test_missing_message_id_is_refused_not_merged() {
+  local fixture out code
+  fixture=$(tmpdir)/noid.jsonl
+  printf '{"type":"assistant","message":{"model":"claude-sonnet-5","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  out=$("$SESSION_USAGE" "$fixture" 2>&1) && code=0 || code=$?
+  assert_exit 1 "$code" "a line missing message.id is refused, not merged into another turn's total"
+  assert_contains "$out" "message.id" "the refusal names the missing field"
+}
+
+test_missing_usage_subfield_is_refused_not_zeroed() {
+  local fixture out code
+  fixture=$(tmpdir)/nocreadfield.jsonl
+  printf '{"type":"assistant","message":{"id":"msg_x","model":"claude-sonnet-5","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  out=$("$SESSION_USAGE" "$fixture" 2>&1) && code=0 || code=$?
+  assert_exit 1 "$code" "a line missing cache_read_input_tokens is refused, not treated as zero"
+  assert_contains "$out" "message.usage.cache_read_input_tokens" "the refusal names the missing sub-field"
+}
+
 test_unpriced_model_is_never_reported_as_zero_cost() {
   local pricing out
   pricing=$(tmpdir)/pricing.tsv
   printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
   printf 'claude-opus-5\t4.00\t20.00\t5.00\t5.00\t0.20\n' >> "$pricing"
   out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$FIXTURES/ses0001.jsonl")
-  assert_contains "$out" "$(printf 'claude-sonnet-5\t1500000\t750000\t0\t0\t0\tunpriced')" "a model absent from pricing.tsv is unpriced, not \$0"
+  assert_contains "$out" "$(printf 'claude-sonnet-5\t1700000\t750016\t0\t0\t0\tunpriced')" "a model absent from pricing.tsv is unpriced, not \$0"
   assert_contains "$out" "partial: unpriced claude-sonnet-5" "the total says it is partial and names the unpriced model"
+}
+
+test_no_priced_model_prints_unpriced_total_not_zero() {
+  local pricing out
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$FIXTURES/ses0001.jsonl")
+  assert_contains "$out" "$(printf 'TOTAL\t3700000\t850016\t500000\t0\t1000000\tunpriced')" "no row prices any model in this session: the total prints unpriced, never 0"
+}
+
+test_blank_rate_prices_known_components_and_flags_the_rest_partial() {
+  # cache_write_1h_per_mtok is blank, matching the shipped pricing.tsv.
+  # A session with nonzero cache_write_1h usage cannot be fully priced:
+  # the known components are still summed, and the row and total both say
+  # which component is missing rather than silently pricing it at 0.
+  local fixture pricing out
+  fixture=$(tmpdir)/cw1h.jsonl
+  printf '{"type":"assistant","message":{"id":"msg_x","model":"claude-opus-5","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":40}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-opus-5\t4.00\t20.00\t5.00\t\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
+  assert_contains "$out" "0.0014 (partial: cache_write_1h unpriced)" "the known components are priced and the missing one is named"
+  assert_contains "$out" "partial: cache_write_1h unpriced for claude-opus-5" "the total names the model and the missing component"
 }
 
 test_usage_error_with_no_arguments() {

@@ -12,18 +12,26 @@
 # other, so a session.jsonl file and its session-dir give the same answer.
 #
 # Only `type=="assistant"` lines count. A model of `<synthetic>` is skipped:
-# it is a placeholder line, not a real model call. One API turn can be
-# split across several JSONL lines that each carry the same message.id and
-# the same usage block; this script counts each message.id once.
+# it is a placeholder line, not a real model call. One API turn can be split
+# across several JSONL lines that share one message.id. Only the last line
+# of a split turn, the one carrying `stop_reason`, holds the turn's final
+# usage numbers; earlier lines carry a partial output count. This script
+# keeps, per message.id, the usage from the line that carries `stop_reason`,
+# and falls back to the maximum of each usage field across the group for a
+# turn that never completed. The timestamp kept is the group's latest line.
 #
 # Pricing comes from bench/pricing.tsv next to this script's bench/, or from
 # the file named by SESSION_USAGE_PRICING when that is set. A model absent
-# from the pricing file is reported as "unpriced", never as a cost of 0.
+# from the pricing file is reported as "unpriced", never as a cost of 0. A
+# model present in the pricing file with one rate left blank is priced on
+# its known components and reported as partial when the session actually
+# used the unpriced component.
 #
 # Exit codes:
 #   0  done
-#   1  an assistant line is missing message.usage or message.model, or a
-#      line is not valid JSON
+#   1  an assistant line is not valid JSON, or is missing message.id,
+#      message.model, message.usage, or one of message.usage's token
+#      fields
 #   2  no transcript found, or no pricing file found
 #   64 usage error
 #
@@ -76,55 +84,82 @@ trap 'rm -rf "$tmp"' EXIT
 records="$tmp/records.jsonl"
 : > "$records"
 
-# Classify one assistant-or-not line: skip it, name a missing field, or emit
-# the fields the aggregation pass needs. Kept as one jq call per line so a
-# malformed line is caught before anything is summed.
+# One jq pass reads an entire file and, for each line, prints one of:
+#   SKIP
+#   ERR\t<line-number>\t<message>
+#   OK\t<compact JSON record>
+# so a malformed or incomplete line is named by file and line number without
+# spawning a second jq process per line.
 # The $ names below are jq variables, not shell variables: single-quoted on
 # purpose.
 # shellcheck disable=SC2016
 LINE_FILTER='
-if .type != "assistant" then {_t:"skip"}
-elif .message.model == "<synthetic>" then {_t:"skip"}
-elif (.message == null) or (.message.usage == null) then {_t:"error", field:"message.usage"}
-elif (.message.model == null) then {_t:"error", field:"message.model"}
-else {
-  _t: "ok",
-  id: .message.id,
-  model: .message.model,
-  ts: (.timestamp // null),
-  input: (.message.usage.input_tokens // 0),
-  output: (.message.usage.output_tokens // 0),
-  cw5m: (.message.usage.cache_creation.ephemeral_5m_input_tokens // 0),
-  cw1h: (.message.usage.cache_creation.ephemeral_1h_input_tokens // 0),
-  cread: (.message.usage.cache_read_input_tokens // 0)
-} end
+input_line_number as $lineno
+| . as $line
+| if ($line | length) == 0 then "SKIP"
+  else
+    try (
+      ($line | fromjson) as $obj
+      | if $obj.type != "assistant" then "SKIP"
+        elif $obj.message.model == "<synthetic>" then "SKIP"
+        elif ($obj.message == null) or ($obj.message.usage == null) then
+          "ERR\t\($lineno)\tassistant line missing message.usage"
+        elif ($obj.message.model == null) then
+          "ERR\t\($lineno)\tassistant line missing message.model"
+        elif ($obj.message.id == null) then
+          "ERR\t\($lineno)\tassistant line missing message.id"
+        elif ($obj.message.usage.input_tokens == null) then
+          "ERR\t\($lineno)\tassistant line missing message.usage.input_tokens"
+        elif ($obj.message.usage.output_tokens == null) then
+          "ERR\t\($lineno)\tassistant line missing message.usage.output_tokens"
+        elif ($obj.message.usage.cache_read_input_tokens == null) then
+          "ERR\t\($lineno)\tassistant line missing message.usage.cache_read_input_tokens"
+        elif ($obj.message.usage.cache_creation.ephemeral_5m_input_tokens == null) then
+          "ERR\t\($lineno)\tassistant line missing message.usage.cache_creation.ephemeral_5m_input_tokens"
+        elif ($obj.message.usage.cache_creation.ephemeral_1h_input_tokens == null) then
+          "ERR\t\($lineno)\tassistant line missing message.usage.cache_creation.ephemeral_1h_input_tokens"
+        else
+          "OK\t" + ({
+            id: $obj.message.id,
+            model: $obj.message.model,
+            ts: ($obj.timestamp // null),
+            stop_reason: ($obj.message.stop_reason // null),
+            input: $obj.message.usage.input_tokens,
+            output: $obj.message.usage.output_tokens,
+            cw5m: $obj.message.usage.cache_creation.ephemeral_5m_input_tokens,
+            cw1h: $obj.message.usage.cache_creation.ephemeral_1h_input_tokens,
+            cread: $obj.message.usage.cache_read_input_tokens
+          } | tojson)
+        end
+    ) catch "ERR\t\($lineno)\tnot a valid JSON line"
+  end
 '
 
 for f in "${files[@]}"; do
-  lineno=0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    lineno=$((lineno + 1))
-    [[ -n "$line" ]] || continue
-    if ! info=$(printf '%s\n' "$line" | jq -c "$LINE_FILTER" 2>/dev/null); then
-      die 1 "$f:$lineno: not a valid JSON line"
-    fi
-    kind=$(printf '%s' "$info" | jq -r '._t')
-    case "$kind" in
-      skip) ;;
-      error)
-        field=$(printf '%s' "$info" | jq -r '.field')
-        die 1 "$f:$lineno: assistant line missing $field"
+  while IFS= read -r out; do
+    case "$out" in
+      SKIP) ;;
+      ERR$'\t'*)
+        rest="${out#ERR$'\t'}"
+        lineno="${rest%%$'\t'*}"
+        msg="${rest#*$'\t'}"
+        die 1 "$f:$lineno: $msg"
         ;;
-      ok) printf '%s\n' "$info" >> "$records" ;;
+      OK$'\t'*)
+        printf '%s\n' "${out#OK$'\t'}" >> "$records"
+        ;;
     esac
-  done < "$f"
+  done < <(jq -R -r "$LINE_FILTER" "$f")
 done
 
-# Sum per model across every kept line, deduped by message.id, and price
-# each model's total from pricing.tsv when a row matches.
+# Dedupe per message.id, taking the stop_reason line's usage when a group
+# has one and the maximum of each field when it does not (an interrupted
+# turn with no final line). Sum per model, then price from pricing.tsv,
+# treating a blank rate as unpriced for that component rather than $0.
 # shellcheck disable=SC2016
 AGG='
 def notnull: select(. != null);
+def parseprice: if . == "" then null else tonumber end;
 ($pricing_text
   | split("\n")
   | map(select(length > 0))
@@ -132,13 +167,28 @@ def notnull: select(. != null);
 ) as $plines
 | ($plines[1:] | map(split("\t")) | map({
     model: .[0],
-    input: (.[1] | tonumber),
-    output: (.[2] | tonumber),
-    cw5m: (.[3] | tonumber),
-    cw1h: (.[4] | tonumber),
-    cread: (.[5] | tonumber)
+    input: (.[1] | parseprice),
+    output: (.[2] | parseprice),
+    cw5m: (.[3] | parseprice),
+    cw1h: (.[4] | parseprice),
+    cread: (.[5] | parseprice)
   }) | INDEX(.model)) as $pmap
-| ($records | unique_by(.id)) as $deduped
+| {input:"input", output:"output", cw5m:"cache_write_5m", cw1h:"cache_write_1h", cread:"cache_read"} as $labels
+| ($records | group_by(.id) | map(
+    . as $g
+    | ($g | map(select(.stop_reason != null))) as $withstop
+    | (if ($withstop | length) > 0 then ($withstop | sort_by(.ts) | last) else null end) as $stop
+    | {
+        id: $g[0].id,
+        model: $g[0].model,
+        ts: ($g | map(.ts) | map(notnull) | sort | last // null),
+        input:  (if $stop != null then $stop.input  else ($g | map(.input)  | max) end),
+        output: (if $stop != null then $stop.output else ($g | map(.output) | max) end),
+        cw5m:   (if $stop != null then $stop.cw5m   else ($g | map(.cw5m)   | max) end),
+        cw1h:   (if $stop != null then $stop.cw1h   else ($g | map(.cw1h)   | max) end),
+        cread:  (if $stop != null then $stop.cread  else ($g | map(.cread)  | max) end)
+      }
+  )) as $deduped
 | ($deduped | map(.ts) | map(notnull) | sort) as $ts
 | ($deduped | group_by(.model) | map({
     model: .[0].model,
@@ -147,29 +197,43 @@ def notnull: select(. != null);
     cw5m: (map(.cw5m) | add),
     cw1h: (map(.cw1h) | add),
     cread: (map(.cread) | add)
-  })) as $rows
-| ($rows | map(
+  })) as $sums
+| ($sums | map(
     . as $r
     | ($pmap[$r.model]) as $p
-    | $r + { cost: (
-        if $p == null then null
-        else ($r.input / 1000000 * $p.input)
-           + ($r.output / 1000000 * $p.output)
-           + ($r.cw5m / 1000000 * $p.cw5m)
-           + ($r.cw1h / 1000000 * $p.cw1h)
-           + ($r.cread / 1000000 * $p.cread)
-        end
-      ) }
+    | if $p == null then
+        $r + { cost: null, partial_fields: [], fully_unpriced: true }
+      else
+        (["input","output","cw5m","cw1h","cread"] | map(
+          . as $f
+          | ($r | .[$f]) as $u
+          | ($p | .[$f]) as $rate
+          | if $rate == null then
+              (if $u == 0 then {amt: 0, field: null} else {amt: 0, field: $f} end)
+            else {amt: ($u / 1000000 * $rate), field: null}
+            end
+        )) as $parts
+        | $r + {
+            cost: ($parts | map(.amt) | add),
+            partial_fields: ($parts | map(select(.field != null) | $labels[.field])),
+            fully_unpriced: false
+          }
+      end
   )) as $priced
 | {
     rows: $priced,
-    total_input: ($rows | map(.input) | add // 0),
-    total_output: ($rows | map(.output) | add // 0),
-    total_cw5m: ($rows | map(.cw5m) | add // 0),
-    total_cw1h: ($rows | map(.cw1h) | add // 0),
-    total_cread: ($rows | map(.cread) | add // 0),
-    total_cost: ($priced | map(select(.cost != null) | .cost) | add // 0),
-    unpriced_models: ($priced | map(select(.cost == null) | .model)),
+    total_input: ($sums | map(.input) | add // 0),
+    total_output: ($sums | map(.output) | add // 0),
+    total_cw5m: ($sums | map(.cw5m) | add // 0),
+    total_cw1h: ($sums | map(.cw1h) | add // 0),
+    total_cread: ($sums | map(.cread) | add // 0),
+    total_cost: ($priced | map(.cost) | map(notnull) | add // 0),
+    all_unpriced: ($priced | length > 0 and all(.[]; .fully_unpriced)),
+    unpriced_models: ($priced | map(select(.fully_unpriced) | .model)),
+    partial_notes: ($priced
+      | map(select(.fully_unpriced | not) | select((.partial_fields | length) > 0)
+          | . as $row | ($row.partial_fields | map(. + " unpriced for " + $row.model)))
+      | flatten),
     first_ts: ($ts[0] // null),
     last_ts: ($ts[-1] // null)
   }
@@ -177,12 +241,22 @@ def notnull: select(. != null);
 
 # shellcheck disable=SC2016
 FORMAT='
-(.rows[] | [.model, (.input|tostring), (.output|tostring), (.cw5m|tostring), (.cw1h|tostring), (.cread|tostring),
-   (if .cost == null then "unpriced" else (.cost|tostring) end)]),
+def rowcost:
+  if .fully_unpriced then "unpriced"
+  elif (.partial_fields | length) > 0 then
+    (.cost | tostring) + " (partial: " + (.partial_fields | join(",")) + " unpriced)"
+  else (.cost | tostring)
+  end;
+(.rows[] | [.model, (.input|tostring), (.output|tostring), (.cw5m|tostring), (.cw1h|tostring), (.cread|tostring), rowcost]),
 (["TOTAL", (.total_input|tostring), (.total_output|tostring), (.total_cw5m|tostring), (.total_cw1h|tostring), (.total_cread|tostring),
-   (if (.unpriced_models|length) > 0
-    then (.total_cost|tostring) + " (partial: unpriced " + (.unpriced_models|join(",")) + ")"
-    else (.total_cost|tostring) end)]),
+   (if .all_unpriced then "unpriced"
+    elif (.unpriced_models|length) > 0 or (.partial_notes|length) > 0 then
+      (.total_cost|tostring) + " (partial: " +
+        (( (if (.unpriced_models|length) > 0 then ["unpriced " + (.unpriced_models|join(","))] else [] end)
+           + .partial_notes)
+         | join("; ")) + ")"
+    else (.total_cost|tostring)
+    end)]),
 (["first_timestamp", (.first_ts // "none")]),
 (["last_timestamp", (.last_ts // "none")])
 | @tsv
