@@ -37,10 +37,11 @@
 #   archive into place before the active log, so a kill between the two
 #   renames leaves the moved rows visible in the archive and check and a
 #   later rotate refuse on the resulting duplicate rather than losing them.
-#   A trap removes every temp path on interruption. Refuses, writing nothing,
-#   if the target archive file already exists, any row number is duplicated,
-#   a row is unparseable, or the active log's header is missing or
-#   malformed.
+#   An EXIT trap removes every temp path whenever the process ends, a signal
+#   included, and the run stops there rather than resuming the rotate
+#   afterwards. Refuses, writing nothing, if the target archive file already
+#   exists, any row number is duplicated, a row is unparseable, or the
+#   active log's header is missing or malformed.
 #
 # check: every row line in the active log and its archives parses, and every
 #   number is unique across files. Prints "ok <count> rows, highest <n>".
@@ -65,6 +66,7 @@
 #   5  refused: rotate found the active log's header missing or malformed
 #   6  internal: the row multiset differed before and after a rotate;
 #      nothing was written
+#   7  refused: rotate's rename onto decisions.md or the archive file failed
 #   64 usage error
 
 set -euo pipefail
@@ -133,18 +135,24 @@ is_row_candidate() {
   [[ "$1" =~ $ROW_RE ]]
 }
 
-# numbers_after_upersedes LINE: prints one number per line for every place
-# LINE reads `[Ss]upersedes <n>`, including a comma/`and`-joined list such as
-# `Supersedes 36, 43, 46, 49, 51, 54 and 57`. A second phrase later on the
-# same line, and a plain comma list with no `and`, are both read.
+# numbers_after_upersedes LINE: sets the array SUPERSEDE_NUMS to one element
+# for every place LINE reads `[Ss]upersedes <n>`, including a comma/`and`-
+# joined list such as `Supersedes 36, 43, 46, 49, 51, 54 and 57`. A second
+# phrase later on the same line, and a plain comma list with no `and`, are
+# both read. Fills an array rather than printing lines through a process
+# substitution, so a caller looping over many rows forks nothing per row:
+# bash 3.2 never closes a process substitution's descriptor, and one opened
+# per row aborted with SIGABRT past about 256 rows (this is what find's
+# per-row loop used to do).
 numbers_after_upersedes() {
+  SUPERSEDE_NUMS=()
   local rest="$1" list item
   while [[ "$rest" =~ upersedes[[:space:]]+([0-9]+([,[:space:]]+(and[[:space:]]+)?[0-9]+)*) ]]; do
     list="${BASH_REMATCH[1]}"
     rest="${rest#*"${BASH_REMATCH[0]}"}"
     while [[ "$list" =~ ([0-9]+) ]]; do
       item="${BASH_REMATCH[1]}"
-      printf '%s\n' "$item"
+      SUPERSEDE_NUMS+=("$item")
       list="${list#*"$item"}"
     done
   done
@@ -186,25 +194,25 @@ cleanup_tmp() { # PATH... -> remove every temp path that was created so far
   return 0
 }
 
-# verify_multiset_or_die CLEANUP_PATH... -- BEFORE_FILE... -- AFTER_FILE...:
-# dies with exit 6, removing every CLEANUP_PATH, unless the sorted row
-# multiset across BEFORE_FILE... equals the one across AFTER_FILE.... The one
-# verify a rotate runs, whether or not any row moved.
+# verify_multiset_or_die --before BEFORE_FILE... --after AFTER_FILE...: dies
+# with exit 6 unless the sorted row multiset across BEFORE_FILE... equals the
+# one across AFTER_FILE.... The one verify a rotate runs, whether or not any
+# row moved. Temp-path cleanup on the way out is the EXIT trap's job: die()
+# exits through it, so a cleanup list here would only repeat what that trap
+# already does.
 verify_multiset_or_die() {
-  local cleanup=() before=() after=() mode=cleanup a
+  local before=() after=() mode="" a
   for a in "$@"; do
     case "$a" in
       --before) mode=before; continue ;;
       --after) mode=after; continue ;;
     esac
     case "$mode" in
-      cleanup) cleanup+=("$a") ;;
       before) before+=("$a") ;;
       after) after+=("$a") ;;
     esac
   done
   if [[ "$(sorted_rows "${before[@]+"${before[@]}"}")" != "$(sorted_rows "${after[@]+"${after[@]}"}")" ]]; then
-    cleanup_tmp "${cleanup[@]+"${cleanup[@]}"}"
     die 6 "row multiset differed before and after; nothing was written"
   fi
 }
@@ -296,14 +304,17 @@ highest_of() { # prints the highest ROWS_NUM, 0 when there are none
 }
 
 # classify_active_rows TOPN_FILE: TOPN_FILE holds topn's numbers, one per
-# line. Reads "NUM STATUS" pairs from stdin, one per active row in file
+# line. Reads "NUM<TAB>STATUS" pairs from stdin, one per active row in file
 # order, and prints one flag per line in the same order: 1 to move, 0 to
-# keep. One awk pass, so splitting kept rows from moved ones stays linear
-# even when the file or the kept set is large. The set comes in as a file
-# rather than a -v string: some awks (the BSD one among them) reject a -v
-# value that itself contains a newline.
+# keep. Tab-separated and compared whole, so a multi-word status such as
+# "assumed until the bench lands" is judged on its full text rather than its
+# first word, which would otherwise read as the bare "assumed" that keeps a
+# row active. One awk pass, so splitting kept rows from moved ones stays
+# linear even when the file or the kept set is large. The set comes in as a
+# file rather than a -v string: some awks (the BSD one among them) reject a
+# -v value that itself contains a newline.
 classify_active_rows() {
-  awk -v topn_file="$1" '
+  awk -F'\t' -v topn_file="$1" '
     BEGIN {
       while ((getline line < topn_file) > 0) if (line != "") keep[line + 0] = 1
       close(topn_file)
@@ -347,15 +358,17 @@ cmd_find() {
     fi
   done
   [[ $found -eq 1 ]] || die 1 "no row numbered $n"
+  # A plain function call per row, filling SUPERSEDE_NUMS, rather than a
+  # process substitution per row: see numbers_after_upersedes.
   for ((i = 0; i < ${#ROWS_NUM[@]}; i++)); do
     line="${ROWS_LINE[$i]}"
-    while IFS= read -r num; do
-      [[ -n "$num" ]] || continue
+    numbers_after_upersedes "$line"
+    for num in "${SUPERSEDE_NUMS[@]+"${SUPERSEDE_NUMS[@]}"}"; do
       if [[ "$((10#$num))" -eq "$((10#$n))" ]]; then
         printf '%s: %s\n' "${ROWS_FILE[$i]}" "$line"
         break
       fi
-    done < <(numbers_after_upersedes "$line")
+    done
   done
 }
 
@@ -405,13 +418,17 @@ cmd_rotate() {
   tmp_active="$home/.decisions.md.tmp.$$"
   tmp_archive_rows="$home/.decisions-archive-rows.tmp.$$"
   tmp_archive_path=""
-  trap 'cleanup_tmp "$tmp_topn" "$tmp_active" "$tmp_archive_rows" "$tmp_archive_path"' EXIT INT TERM
+  # EXIT alone, the idiom skills/walkthrough/template.sh already uses: bash
+  # runs an EXIT trap even when a fatal INT or TERM ends the process, so
+  # cleanup still runs, but the run stops there rather than resuming the
+  # rotate with its temp files already gone.
+  trap 'cleanup_tmp "$tmp_topn" "$tmp_active" "$tmp_archive_rows" "$tmp_archive_path"' EXIT
 
   for i in "${active_idx[@]+"${active_idx[@]}"}"; do printf '%s\n' "${ROWS_NUM[$i]}"; done \
     | sort -rn | awk -v n="$keep" 'NR<=n' > "$tmp_topn"
 
   local pairs flags_str
-  pairs=$(for i in "${active_idx[@]+"${active_idx[@]}"}"; do printf '%s %s\n' "${ROWS_NUM[$i]}" "${ROWS_STATUS[$i]}"; done)
+  pairs=$(for i in "${active_idx[@]+"${active_idx[@]}"}"; do printf '%s\t%s\n' "${ROWS_NUM[$i]}" "${ROWS_STATUS[$i]}"; done)
   flags_str=$(printf '%s\n' "$pairs" | classify_active_rows "$tmp_topn")
   rm -f "$tmp_topn"
   local move_flags=() f
@@ -444,10 +461,10 @@ cmd_rotate() {
 
   if [[ ${#moved_nums[@]} -eq 0 ]]; then
     rm -f "$tmp_archive_rows"
-    verify_multiset_or_die "$tmp_active" \
+    verify_multiset_or_die \
       --before "$active" "${other_archives[@]+"${other_archives[@]}"}" \
       --after "$tmp_active" "${other_archives[@]+"${other_archives[@]}"}"
-    mv -f "$tmp_active" "$active"
+    mv -f "$tmp_active" "$active" || die 7 "rename failed: $tmp_active -> $active"
     printf 'rotated: moved 0 rows; kept %s rows in decisions.md\n' "$kept_count"
     return 0
   fi
@@ -477,7 +494,7 @@ cmd_rotate() {
   } > "$tmp_archive_path"
   rm -f "$tmp_archive_rows"
 
-  verify_multiset_or_die "$tmp_active" "$tmp_archive_path" \
+  verify_multiset_or_die \
     --before "$active" "${other_archives[@]+"${other_archives[@]}"}" \
     --after "$tmp_active" "$tmp_archive_path" "${other_archives[@]+"${other_archives[@]}"}"
 
@@ -485,8 +502,8 @@ cmd_rotate() {
   # between the two leaves the moved rows in a file check already reads;
   # the active log still carries them too, and that duplicate is exactly
   # what check and a later rotate refuse on.
-  mv -f "$tmp_archive_path" "$archive_path"
-  mv -f "$tmp_active" "$active"
+  mv -f "$tmp_archive_path" "$archive_path" || die 7 "rename failed: $tmp_archive_path -> $archive_path"
+  mv -f "$tmp_active" "$active" || die 7 "rename failed: $tmp_active -> $active"
   printf 'rotated: moved %s rows to decisions/archive/%s; kept %s rows in decisions.md\n' \
     "${#moved_nums[@]}" "$archive_name" "$kept_count"
 }

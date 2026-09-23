@@ -40,6 +40,62 @@ capstan_type: decision-log
 EOF
 }
 
+# install_decisions_md_mv_shim DIR: writes a `mv` shim into DIR that exits 1
+# when its last argument ends in /decisions.md, and otherwise execs the real
+# mv untouched. Deterministic and the same under any user, root included, on
+# macOS or Linux, unlike an immutable-file flag (chflags/chattr), which
+# needs a capability root does not always have and, if a run is interrupted
+# mid-flag, leaves a file the test runner cannot remove.
+install_decisions_md_mv_shim() {
+  local dir="$1" real_mv
+  real_mv=$(command -v mv)
+  cat > "$dir/mv" <<SHIM
+#!/bin/sh
+for last; do :; done
+case "\$last" in
+  */decisions.md) exit 1 ;;
+esac
+exec "$real_mv" "\$@"
+SHIM
+  chmod +x "$dir/mv"
+}
+
+# install_active_rename_term_shim DIR: writes a `mv` shim into DIR that,
+# only for a call whose last argument ends in /decisions.md, sends SIGTERM
+# to its parent and waits (up to 5s) for the parent to actually exit before
+# returning, rather than performing that rename; every other call execs the
+# real mv untouched. If the parent never exits, it leaves DIR/.interrupt-
+# missed. That case is not mere flakiness: a shell that has trapped the
+# signal itself (rather than leaving it at its default disposition) defers
+# running the trap until the current foreground command finishes, so a
+# parent that catches TERM without exiting sits waiting on this very shim
+# until the wait times out. The caller treats that as the trap regression it
+# is, not as a reason to pass quietly.
+install_active_rename_term_shim() {
+  local dir="$1" real_mv
+  real_mv=$(command -v mv)
+  cat > "$dir/mv" <<SHIM
+#!/bin/sh
+for last; do :; done
+case "\$last" in
+  */decisions.md)
+    kill -TERM "\$PPID" 2>/dev/null
+    waited=0
+    while kill -0 "\$PPID" 2>/dev/null && [ "\$waited" -lt 500 ]; do
+      sleep 0.01
+      waited=\$((waited + 1))
+    done
+    if kill -0 "\$PPID" 2>/dev/null; then
+      touch "$dir/.interrupt-missed"
+    fi
+    exit 143
+    ;;
+esac
+exec "$real_mv" "\$@"
+SHIM
+  chmod +x "$dir/mv"
+}
+
 test_rotate_keeps_open_assumed_unformed_and_newest_n_moves_the_rest() {
   local home before size_before out
   home=$(tmpdir)
@@ -373,33 +429,27 @@ EOF
 }
 
 test_rotate_forced_failure_after_archive_rename_leaves_active_untouched_and_is_detected() {
-  local home before code out locked=0
+  local home before code out shim_dir saved_path
   home=$(tmpdir)
   make_ten_row_log "$home"
   before=$(cat "$home/decisions.md")
   mkdir -p "$home/decisions/archive"
 
   # Force exactly the active log's own rename to fail, deterministically and
-  # without any signal or timing: an immutable target file cannot be renamed
-  # over. The archive rename lands on a different file entirely and is
-  # unaffected, so this isolates the two renames' order rather than merely
-  # asserting the state an interruption between them would leave.
-  if chflags uchg "$home/decisions.md" 2>/dev/null; then
-    locked=1
-  elif chattr +i "$home/decisions.md" 2>/dev/null; then
-    locked=2
-  fi
-  if [[ $locked -eq 0 ]]; then
-    printf '  skipped (no immutable-file flag available on this platform)\n'
-    return 0
-  fi
-
+  # the same way under any user (root included) on macOS or Linux: a PATH
+  # shim for `mv` that fails only the call whose last argument ends in
+  # /decisions.md and hands every other call to the real mv. The archive
+  # rename lands on a different filename entirely and is unaffected, so this
+  # isolates the two renames' order rather than merely asserting the state
+  # an interruption between them would leave.
+  shim_dir=$(tmpdir)
+  install_decisions_md_mv_shim "$shim_dir"
+  saved_path="$PATH"
+  PATH="$shim_dir:$PATH"
   out=$("$LOG" rotate "$home" --keep 3 --threshold 1 2>&1) && code=0 || code=$?
+  PATH="$saved_path"
 
-  [[ $locked -eq 1 ]] && chflags nouchg "$home/decisions.md"
-  [[ $locked -eq 2 ]] && chattr -i "$home/decisions.md"
-
-  assert_exit 1 "$code" "a failed rename should abort ($out)"
+  assert_exit 7 "$code" "a failed rename should abort with its own code ($out)"
   local archive="$home/decisions/archive/decisions-0001-0007.md"
   assert_file "$archive" "the archive rename must land before the active rename is attempted"
   assert_eq "$before" "$(cat "$home/decisions.md")" "the active log must be untouched when its own rename fails"
@@ -412,26 +462,57 @@ test_rotate_forced_failure_after_archive_rename_leaves_active_untouched_and_is_d
   assert_exit 3 "$code"
 }
 
-test_rotate_interrupted_leaves_no_temp_file() {
-  local home i
+# test_sigterm_before_the_active_rename_leaves_the_log_and_check_untouched
+# replaces a poll-and-kill version of this test: waiting for a temp file to
+# appear before sending TERM never failed when the code was correct, but on
+# a slower runner it could pass without ever having interrupted anything,
+# and it added several seconds to every run. A PATH shim removes the timing
+# race entirely: it fires exactly at the mv call this test cares about, and
+# it can tell the caller when the interrupt did not land rather than pass
+# silently.
+#
+# The fixture uses --keep's default (50) against 50 rows, an interleaved
+# status column (every tenth row open, so kept and would-be-moved rows are
+# threaded through the file rather than clustered at the top) but sized so
+# every row number is in fact kept: with nothing moved, the rotate makes
+# exactly one rename call, the one this test intercepts, so decisions.md and
+# the archive both stay exactly as they were and `check` sees no duplicate.
+# A rotate where the archive rename has already landed when the active
+# rename is interrupted is the different, already-covered scenario in
+# test_rotate_forced_failure_after_archive_rename_leaves_active_untouched_and_is_detected.
+test_sigterm_before_the_active_rename_leaves_the_log_and_check_untouched() {
+  local home before check_before shim_dir saved_path out code i
   home=$(tmpdir)
   mkdir -p "$home"
   {
     printf -- '---\ncapstan_type: decision-log\n---\n\n# Decisions\n\n| # | Date | Decision | Status |\n|---|------|----------|--------|\n'
-    for ((i = 3000; i >= 1; i--)); do
-      printf '| %d | 2026-09-01 | padded row text so the fixture file is large enough that an interruption reliably lands mid-write, before either rename here runs to completion today | accepted |\n' "$i"
+    for ((i = 50; i >= 1; i--)); do
+      if (( i % 10 == 0 )); then
+        printf '| %d | 2026-09-01 | an open row, one in every ten, threaded through the file so a corrupted rotate would leave check disagreeing with the count taken before | open |\n' "$i"
+      else
+        printf '| %d | 2026-09-01 | an ordinary accepted row that stays active only because every row here falls within the default kept top N | accepted |\n' "$i"
+      fi
     done
   } > "$home/decisions.md"
+  before=$(cat "$home/decisions.md")
+  check_before=$("$LOG" check "$home")
 
-  "$LOG" rotate "$home" --keep 3 --threshold 1 >/dev/null 2>&1 &
-  local pid=$!
-  local waited=0
-  while [[ ! -e "$home/.decisions.md.tmp.$pid" && $waited -lt 500 ]]; do
-    sleep 0.01
-    waited=$((waited + 1))
-  done
-  kill -TERM "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  shim_dir=$(tmpdir)
+  install_active_rename_term_shim "$shim_dir"
+  saved_path="$PATH"
+  PATH="$shim_dir:$PATH"
+  out=$("$LOG" rotate "$home" --threshold 1 2>&1) && code=0 || code=$?
+  PATH="$saved_path"
+
+  if [[ -e "$shim_dir/.interrupt-missed" ]]; then
+    fail "the SIGTERM never landed before the active-log rename: the process kept running instead of stopping at the signal (exit $code, output: $out)"
+    return 1
+  fi
+
+  assert_exit 143 "$code" "a SIGTERM landing before the active-log rename should end the run through the EXIT trap ($out)"
+  assert_eq "$before" "$(cat "$home/decisions.md")" "decisions.md must be byte-identical to before the interrupt"
+  out=$("$LOG" check "$home")
+  assert_eq "$check_before" "$out" "check must report the original row count after the interrupt"
 
   shopt -s nullglob
   local leftovers=("$home"/.decisions*.tmp.* "$home"/.topn.tmp.* "$home"/decisions/archive/.decisions*.tmp.*)
@@ -491,6 +572,28 @@ EOF
   for n in 3 1 2 4; do
     assert_not_contains "$active" "| $n | 2026-09-01"
   done
+}
+
+# classify_active_rows used to compare only the status cell's first
+# whitespace-separated word, so a multi-word status such as "assumed until
+# the bench lands" read as the bare "assumed" and stayed active regardless
+# of its number.
+test_rotate_moves_a_multiword_status_that_only_starts_with_a_kept_word() {
+  local home out active archive
+  home=$(tmpdir)
+  mkdir -p "$home"
+  {
+    printf -- '---\ncapstan_type: decision-log\n---\n\n# Decisions\n\n| # | Date | Decision | Status |\n|---|------|----------|--------|\n'
+    printf '| 2 | 2026-09-01 | an open row, kept so the fixture always has something recent | open |\n'
+    printf '| 1 | 2026-09-01 | a status that starts with the word assumed but is not the exact status assumed | assumed until the bench lands |\n'
+  } > "$home/decisions.md"
+  out=$("$LOG" rotate "$home" --keep 0 --threshold 0)
+  assert_contains "$out" "moved 1 rows"
+  active=$(cat "$home/decisions.md")
+  assert_not_contains "$active" "| 1 | 2026-09-01"
+  archive="$home/decisions/archive/decisions-0001-0001.md"
+  assert_file "$archive"
+  assert_contains "$(cat "$archive")" "assumed until the bench lands"
 }
 
 test_rotate_preserves_a_backslash_in_row_text_byte_for_byte() {
@@ -569,6 +672,27 @@ EOF
   assert_contains "$out57" "| 58 | 2026-09-01"
 }
 
+# find used to open a process substitution per row while scanning for
+# `upersedes` phrases. bash 3.2 never closes one, and aborted with SIGABRT
+# once about 256 were open at once, well under a real log's row count. This
+# fixture crosses 300 rows so `/bin/bash tests/run.sh` catches a relapse.
+test_find_works_on_a_log_with_hundreds_of_rows() {
+  local home out i
+  home=$(tmpdir)
+  mkdir -p "$home"
+  {
+    printf -- '---\ncapstan_type: decision-log\n---\n\n# Decisions\n\n| # | Date | Decision | Status |\n|---|------|----------|--------|\n'
+    printf '| 188 | 2026-09-01 | Supersedes 40, 48, 50, 58 | accepted |\n'
+    for ((i = 350; i >= 1; i--)); do
+      [[ "$i" -eq 188 ]] && continue
+      printf '| %d | 2026-09-01 | an ordinary padded row so this fixture crosses the descriptor count that once made bash 3.2 abort mid-scan | accepted |\n' "$i"
+    done
+  } > "$home/decisions.md"
+  out=$("$LOG" find "$home" 48)
+  assert_contains "$out" "| 48 | 2026-09-01"
+  assert_contains "$out" "| 188 | 2026-09-01"
+}
+
 # --- S4: check, next and find require decisions.md --------------------------
 
 test_check_next_find_require_the_active_log() {
@@ -598,7 +722,7 @@ test_status_with_a_trailing_tab_is_still_recognised_as_open() {
 
 # --- T1: --keep 0, and a missing flag value ---------------------------------
 
-test_rotate_keep_zero_works_under_this_shells_head() {
+test_rotate_keep_zero_moves_every_row_but_open_assumed_unformed() {
   local home out
   home=$(tmpdir)
   make_ten_row_log "$home"
