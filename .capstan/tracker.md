@@ -13,7 +13,7 @@ capstan_type: tracker
 | external-review | bench | building | |
 | external-review | board | planned | |
 | external-review | deny | merged | 9c61880 |
-| external-review | log-helper | building | |
+| external-review | log-helper | merged | 3e25155 |
 | external-review | log-readers | planned | |
 | external-review | quick | merged | 960e9a2 |
 | external-review | readme | planned | |
