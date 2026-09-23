@@ -20,7 +20,8 @@ set -euo pipefail
 export LC_ALL=C
 
 TAB=$'\t'
-# The backticks are literal: the merge-commit comment format in TRACKER-GITHUB.md.
+# The backticks are literal: the merge-commit comment format in this skill's
+# own SKILL.md, under "The merge-commit comment format".
 # shellcheck disable=SC2016
 MERGE_RE='^merged in `[0-9a-f]{4,40}`$'
 ROW_HEADER="effort${TAB}slice${TAB}status${TAB}commit${TAB}issue${TAB}url${TAB}note"

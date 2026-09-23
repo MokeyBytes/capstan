@@ -15,7 +15,7 @@ This flow ensures `.gitignore` carries `.capstan/quick/`, the way [Files](../eff
 
 ## Lifecycle
 
-`<working copy>/.capstan/quick/` holds at most one folder — a missing directory reads as empty. Its Tracker row is looked up by effort and slice both equal to the slug, never slug alone, per `TRACKER-GITHUB.md`'s rule for a full effort's rows.
+`<working copy>/.capstan/quick/` holds at most one folder — a missing directory reads as empty. Its Tracker row is looked up by effort and slice both equal to the slug, never slug alone, the same row-per-slice shape [`## Tracker`](../effort/SKILL.md#tracker) declares for a full effort's rows.
 
 **Reading the argument.** A folder whose row is not `planned` is settled by its table row before the argument is read.
 

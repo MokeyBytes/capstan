@@ -7,7 +7,7 @@ description: Read or write Capstan's slice tracker on a GitHub Projects v2 board
 
 The helpers this skill runs live in `bin/` beside this file. Resolve that folder to an absolute path from wherever this skill was loaded — `${CLAUDE_PLUGIN_ROOT}/skills/tracker/bin` under a plugin install, `bin/` beside this file under a manual one — and call it `<bin>` below. This plugin cannot read core's files, so it never resolves `<bin>` against `capstan`'s own `bin/`.
 
-The visibility gate that decides whether a write needs the operator's confirmation lives in the Authority table in core's `effort` skill, and only there. Read it before writing anything to this surface.
+Under an effort, where core's `effort` skill is already loaded, the visibility gate that decides whether a write needs the operator's confirmation lives in the Authority table there, and only there. Read it before writing anything to this surface. A caller outside an effort — this plugin's own `setup` skill among them, which cannot load that skill — states its own approval rule inline instead of pointing here.
 
 ## The column mapping
 
@@ -144,7 +144,7 @@ Read the board through the helper, never through a bare `gh project item-list`:
 <bin>/capstan-tracker read --owner <owner> --repo <repo> --project <project-number> [--with-commits]
 ```
 
-It prints one tab-separated row per slice — `effort`, `slice`, `status`, `commit`, `issue`, `url`, `note` — under a header line, a summary on stderr, and it exits 0 only for a read it can prove complete. `gh project item-list` returns 30 items unless told otherwise and paginates only up to the limit it is given, so the helper reads with an explicit limit, compares what came back against the `totalCount` the same response carries, and reads again with that count when the two differ. A row belongs to this tracker only when it is an issue in `<owner>/<repo>` carrying a `Capstan Status`; everything else on the board is counted in the summary and left out, per 730.
+It prints one tab-separated row per slice — `effort`, `slice`, `status`, `commit`, `issue`, `url`, `note` — under a header line, a summary on stderr, and it exits 0 only for a read it can prove complete. `gh project item-list` returns 30 items unless told otherwise and paginates only up to the limit it is given, so the helper reads with an explicit limit, compares what came back against the `totalCount` the same response carries, and reads again with that count when the two differ. A row belongs to this tracker only when it is an issue in `<owner>/<repo>` carrying a `Capstan Status`; everything else on the board is counted in the summary and left out.
 
 | Exit | Means |
 |---|---|
@@ -171,7 +171,7 @@ There is no repair path either. `gh` has no `project field-edit`, so the built-i
 
 GitHub unreachable stops the run and says so. No retry, no backoff, no bounded wait. A rate limit and an expired token are the same case: the run ends rather than slows down. This is the same rule an unreachable document home already gets — a missing source of truth is not ambiguity to work around, it is a reason to stop.
 
-The discriminator is the exit status, never the message, and it reaches every read against this surface. Through the helper that is one code to read: exit 1 is unreachable, whichever of its calls failed, the per-issue comment reads included, which fire once per merged row and are easy to undercount by hand. Exit 2, incomplete, stops the run the same way: a partial read is neither empty nor unreachable, and treating it as either drops rows while reporting success, per 828.
+The discriminator is the exit status, never the message, and it reaches every read against this surface. Through the helper that is one code to read: exit 1 is unreachable, whichever of its calls failed, the per-issue comment reads included, which fire once per merged row and are easy to undercount by hand. Exit 2, incomplete, stops the run the same way: a partial read is neither empty nor unreachable, and treating it as either drops rows while reporting success.
 
 A nonzero exit from a write, or from any `gh` call made outside the helper, is unreachable, with one exception: this plugin's own `setup` skill's scope-probe branch already names the missing-`project`-scope failure and walks the operator through the grant rather than stopping here. Every other nonzero exit, at that probe and everywhere else on this surface, is unreachable.
 
