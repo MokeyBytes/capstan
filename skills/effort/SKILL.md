@@ -193,7 +193,7 @@ The lock is the only thing standing between two sessions and the same files. The
 
 Then check how many efforts are in flight. **Three is the ceiling.** Three gates each against one reader means nine briefs a cycle, which is the point where they stop being read and start being rubber-stamped. If three are already open, say so and ask which one to close first rather than starting a fourth.
 
-Then read what already exists: `CONTEXT.md`, `decisions.md` in full, and any prior `decisions/` records covering this area, all in the document home. Also `grep -i` `decisions/archive/` in the document home for this effort's area terms: a rotated row still binds even though it no longer sits in `decisions.md`. Also read the effort's knowledge-base note if it has one. You are bound by decisions already made. If one of them is wrong, say so out loud rather than quietly designing around it.
+Then read what already exists: `CONTEXT.md`, `decisions.md` in full, and any prior `decisions/` records covering this area, all in the document home. Also `grep -ri` `decisions/archive/` in the document home for this effort's area terms: a rotated row still binds even though it no longer sits in `decisions.md`. Also read the effort's knowledge-base note if it has one. You are bound by decisions already made. If one of them is wrong, say so out loud rather than quietly designing around it.
 
 ## Every phase begins by re-reading the world
 
@@ -220,7 +220,7 @@ Verifying costs two commands. Building on a stale premise costs the whole phase.
 
 Invoke the `decision-record` skill before this run's first row goes into `decisions.md` in the document home: a continuous duty has no moment of its own to attach to, so this section supplies one.
 
-Take the new row's number from `<bin>/capstan-log next <document home>` rather than counting rows by eye: a rotated row is no longer visible in `decisions.md`, so the highest number on the page understates the true highest once any archive exists.
+Take the new row's number from `<bin>/capstan-log next <document home>` rather than counting rows by eye: after rotation the active log holds only the newest N rows plus whatever is still `open`, `assumed` or `unformed` — far fewer rows than the highest number in force — so counting them gives the wrong number, while `next` reads every file, the active log and every archive, under any `--keep`.
 
 ## Phase 1: Concept
 
