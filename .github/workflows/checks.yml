@@ -22,3 +22,21 @@ jobs:
           done
       - name: Run the checks
         run: bash tests/run.sh
+
+  root:
+    # Runs the same checks as root, inside a bare Linux container, so the
+    # chmod-444 half of test_interrupted_write_leaves_no_temp_file exercises
+    # a real root instead of the id -u shim used locally.
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Install git, bash and the test tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bash git jq shellcheck findutils coreutils sed gawk diffutils ca-certificates
+      - uses: actions/checkout@v4
+      - name: Confirm the container runs as root
+        run: '[ "$(id -u)" = "0" ]'
+      - name: Run the checks as root
+        run: bash tests/run.sh
