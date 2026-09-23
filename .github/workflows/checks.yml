@@ -45,7 +45,7 @@ jobs:
             echo "test_walkthrough.sh exited $status under the id -u shim" >&2
             exit 1
           fi
-          count="$(printf '%s\n' "$output" | grep -c 'skipped (root)')"
+          count="$(printf '%s\n' "$output" | grep -c 'skipped (root)' || true)"
           if [ "$count" -ne 1 ]; then
             echo "expected exactly one 'skipped (root)' line, got $count" >&2
             exit 1
