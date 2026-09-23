@@ -10,14 +10,14 @@ capstan_type: tracker
 | code-standards | builder-standards | merged | 15dfa0d |
 | code-standards | comment-rule | merged | 4f00453 |
 | code-standards | declared-checks | merged | 243d4db |
-| external-review | bench | planned | |
+| external-review | bench | building | |
 | external-review | board | planned | |
-| external-review | deny | planned | |
-| external-review | log-helper | planned | |
+| external-review | deny | building | |
+| external-review | log-helper | building | |
 | external-review | log-readers | planned | |
-| external-review | quick | planned | |
+| external-review | quick | building | |
 | external-review | readme | planned | |
-| external-review | root-test | planned | |
+| external-review | root-test | building | |
 | github-surface | docs | merged | 04d33d6 |
 | github-surface | effort-read | merged | b393bb7 |
 | github-surface | phase-files | merged | a681858 |
