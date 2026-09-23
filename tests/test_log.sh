@@ -327,4 +327,306 @@ test_help_lists_commands_and_exit_codes() {
   assert_contains "$out" "Exit codes"
 }
 
+test_help_names_the_tools_actually_used() {
+  local out
+  out=$("$LOG" --help 2>&1) || true
+  assert_not_contains "$out" "bash, awk, sort and grep only"
+  assert_contains "$out" "POSIX tools"
+  assert_contains "$out" "No jq"
+}
+
+# --- S1: an interruption between the two renames ----------------------------
+
+test_rotate_interrupted_between_renames_is_detected_by_check_and_rotate() {
+  local home code out
+  home=$(tmpdir)
+  make_ten_row_log "$home"
+  # Exactly the state a kill between the two renames now leaves: the archive
+  # already renamed into place, the active log not yet rewritten. Both
+  # commands must refuse on the resulting duplicate rather than lose the
+  # rows or report a stale "ok".
+  mkdir -p "$home/decisions/archive"
+  cat > "$home/decisions/archive/decisions-0001-0007.md" <<'EOF'
+---
+capstan_type: decision-archive
+---
+
+# Decisions archive
+
+| # | Date | Decision | Status |
+|---|------|----------|--------|
+| 7 | 2026-09-01 | Row seven is an ordinary accepted row, old and low numbered enough that rotation should move it to the archive once it runs on this fixture | accepted |
+| 5 | 2026-09-01 | Row five carries a pipe `like|this` and backticks in its own text, which the status parser must still read past to find the real status word | accepted |
+| 4 | 2026-09-01 | Row four is an ordinary accepted row that should move to the archive the same way row seven and row three do, unedited and byte for byte forever | accepted |
+| 3 | 2026-09-01 | Row three is an ordinary accepted row, padded to a realistic length so the fixture file crosses a small byte threshold once all ten rows are present | accepted |
+| 2 | 2026-09-01 | Row two is the row that row nine supersedes. Its own status cell never changes: this line stays exactly as it is, in the archive, forever | superseded by 9 |
+| 1 | 2026-09-01 | Row one is the oldest ordinary accepted row in the fixture, and the lowest-numbered row that rotation should move to the archive today | accepted |
+EOF
+
+  out=$("$LOG" check "$home" 2>&1) && code=0 || code=$?
+  assert_exit 3 "$code"
+  assert_contains "$out" "duplicated"
+
+  out=$("$LOG" rotate "$home" --keep 3 --threshold 1 2>&1) && code=0 || code=$?
+  assert_exit 3 "$code"
+  assert_contains "$out" "duplicated"
+}
+
+test_rotate_forced_failure_after_archive_rename_leaves_active_untouched_and_is_detected() {
+  local home before code out locked=0
+  home=$(tmpdir)
+  make_ten_row_log "$home"
+  before=$(cat "$home/decisions.md")
+  mkdir -p "$home/decisions/archive"
+
+  # Force exactly the active log's own rename to fail, deterministically and
+  # without any signal or timing: an immutable target file cannot be renamed
+  # over. The archive rename lands on a different file entirely and is
+  # unaffected, so this isolates the two renames' order rather than merely
+  # asserting the state an interruption between them would leave.
+  if chflags uchg "$home/decisions.md" 2>/dev/null; then
+    locked=1
+  elif chattr +i "$home/decisions.md" 2>/dev/null; then
+    locked=2
+  fi
+  if [[ $locked -eq 0 ]]; then
+    printf '  skipped (no immutable-file flag available on this platform)\n'
+    return 0
+  fi
+
+  out=$("$LOG" rotate "$home" --keep 3 --threshold 1 2>&1) && code=0 || code=$?
+
+  [[ $locked -eq 1 ]] && chflags nouchg "$home/decisions.md"
+  [[ $locked -eq 2 ]] && chattr -i "$home/decisions.md"
+
+  assert_exit 1 "$code" "a failed rename should abort ($out)"
+  local archive="$home/decisions/archive/decisions-0001-0007.md"
+  assert_file "$archive" "the archive rename must land before the active rename is attempted"
+  assert_eq "$before" "$(cat "$home/decisions.md")" "the active log must be untouched when its own rename fails"
+
+  # The archive now holds rows also still present in the untouched active
+  # log: exactly the duplicate state check and rotate must refuse on.
+  out=$("$LOG" check "$home" 2>&1) && code=0 || code=$?
+  assert_exit 3 "$code"
+  out=$("$LOG" rotate "$home" --keep 3 --threshold 1 2>&1) && code=0 || code=$?
+  assert_exit 3 "$code"
+}
+
+test_rotate_interrupted_leaves_no_temp_file() {
+  local home i
+  home=$(tmpdir)
+  mkdir -p "$home"
+  {
+    printf -- '---\ncapstan_type: decision-log\n---\n\n# Decisions\n\n| # | Date | Decision | Status |\n|---|------|----------|--------|\n'
+    for ((i = 3000; i >= 1; i--)); do
+      printf '| %d | 2026-09-01 | padded row text so the fixture file is large enough that an interruption reliably lands mid-write, before either rename here runs to completion today | accepted |\n' "$i"
+    done
+  } > "$home/decisions.md"
+
+  "$LOG" rotate "$home" --keep 3 --threshold 1 >/dev/null 2>&1 &
+  local pid=$!
+  local waited=0
+  while [[ ! -e "$home/.decisions.md.tmp.$pid" && $waited -lt 500 ]]; do
+    sleep 0.01
+    waited=$((waited + 1))
+  done
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+
+  shopt -s nullglob
+  local leftovers=("$home"/.decisions*.tmp.* "$home"/.topn.tmp.* "$home"/decisions/archive/.decisions*.tmp.*)
+  shopt -u nullglob
+  assert_eq "0" "${#leftovers[@]}" "no temp path should survive an interrupted rotate: ${leftovers[*]:-}"
+}
+
+# --- S3: fixtures the round-1 mutants slipped past ---------------------------
+
+test_rotate_keeps_open_row_with_pipe_below_the_top_n() {
+  local home out active
+  home=$(tmpdir)
+  mkdir -p "$home"
+  {
+    printf -- '---\ncapstan_type: decision-log\n---\n\n# Decisions\n\n| # | Date | Decision | Status |\n|---|------|----------|--------|\n'
+    printf '| %d | 2026-09-01 | ordinary accepted row padded so the fixture crosses a small byte threshold once every row here is present today | accepted |\n' 20 19 18 17 16
+    printf '| 1 | 2026-09-01 | an open row far below the kept top N, carrying a pipe `a|b` in its own text, that must stay active on status alone | open |\n'
+  } > "$home/decisions.md"
+  out=$("$LOG" rotate "$home" --keep 2 --threshold 0)
+  assert_contains "$out" "kept 3 rows"
+  active=$(cat "$home/decisions.md")
+  assert_contains "$active" "| 1 | 2026-09-01"
+  assert_contains "$active" "| 20 | 2026-09-01"
+  assert_contains "$active" "| 19 | 2026-09-01"
+  assert_not_contains "$active" "| 18 | 2026-09-01"
+  assert_not_contains "$active" "| 17 | 2026-09-01"
+  assert_not_contains "$active" "| 16 | 2026-09-01"
+}
+
+test_rotate_out_of_order_rows_keeps_exactly_the_correct_set() {
+  local home out active
+  home=$(tmpdir)
+  mkdir -p "$home"
+  cat > "$home/decisions.md" <<'EOF'
+---
+capstan_type: decision-log
+---
+
+# Decisions
+
+| # | Date | Decision | Status |
+|---|------|----------|--------|
+| 3 | 2026-09-01 | an ordinary accepted row placed early in file order though its number ranks it well outside the two highest numbers kept today | accepted |
+| 12 | 2026-09-01 | an open row placed second in file order that stays active on status alone regardless of file order or numeric ranking today | open |
+| 1 | 2026-09-01 | an ordinary accepted row placed third in file order and also outside the two highest numbers kept on this fixture today | accepted |
+| 11 | 2026-09-01 | an ordinary accepted row placed fourth in file order that must stay active only because its number ranks in the top two kept | accepted |
+| 2 | 2026-09-01 | an ordinary accepted row placed fifth in file order and outside the two highest numbers kept on this fixture today as well | accepted |
+| 9 | 2026-09-01 | an assumed row placed sixth in file order that stays active on status alone regardless of file order or numeric ranking today | assumed |
+| 4 | 2026-09-01 | an ordinary accepted row placed last in file order and outside the two highest numbers kept on this fixture as well today | accepted |
+EOF
+  out=$("$LOG" rotate "$home" --keep 2 --threshold 0)
+  assert_contains "$out" "moved 4 rows to decisions/archive/decisions-0001-0004.md; kept 3 rows"
+  active=$(cat "$home/decisions.md")
+  for n in 12 11 9; do
+    assert_contains "$active" "| $n | 2026-09-01"
+  done
+  for n in 3 1 2 4; do
+    assert_not_contains "$active" "| $n | 2026-09-01"
+  done
+}
+
+test_rotate_preserves_a_backslash_in_row_text_byte_for_byte() {
+  # A row's bytes are copied by a plain `read -r` loop rather than
+  # re-derived; if a future change dropped the `-r` and let `read` collapse
+  # a backslash escape, this row's text would come out changed and the
+  # multiset verify that guards every rotate would refuse rather than write
+  # silently corrupted output.
+  local home out archive
+  home=$(tmpdir)
+  mkdir -p "$home"
+  {
+    printf -- '---\ncapstan_type: decision-log\n---\n\n# Decisions\n\n| # | Date | Decision | Status |\n|---|------|----------|--------|\n'
+    printf '| 2 | 2026-09-01 | an open row so the file has something recent to keep | open |\n'
+    printf '| 1 | 2026-09-01 | a row whose text carries a literal backslash \\ that a plain read would treat as an escape | accepted |\n'
+  } > "$home/decisions.md"
+  out=$("$LOG" rotate "$home" --keep 0 --threshold 0)
+  assert_contains "$out" "moved 1 rows"
+  archive="$home/decisions/archive/decisions-0001-0001.md"
+  assert_file "$archive"
+  assert_contains "$(cat "$archive")" 'a literal backslash \ that a plain read'
+}
+
+test_find_matches_supersedes_case_insensitively_but_not_as_a_substring() {
+  local home out
+  home=$(tmpdir)
+  mkdir -p "$home"
+  cat > "$home/decisions.md" <<'EOF'
+---
+capstan_type: decision-log
+---
+
+# Decisions
+
+| # | Date | Decision | Status |
+|---|------|----------|--------|
+| 20 | 2026-09-01 | an unrelated accepted row | accepted |
+| 19 | 2026-09-01 | Supersedes 150, a number that must never match find 15 | accepted |
+| 18 | 2026-09-01 | supersedes 15 written in lowercase | accepted |
+| 17 | 2026-09-01 | Supersedes 12. Also supersedes 15 on its second half | accepted |
+| 15 | 2026-09-01 | the row being superseded | superseded by 18 |
+EOF
+  local out
+  out=$("$LOG" find "$home" 15)
+  assert_contains "$out" "| 15 | 2026-09-01"
+  assert_contains "$out" "| 18 | 2026-09-01"
+  assert_contains "$out" "| 17 | 2026-09-01"
+  assert_not_contains "$out" "| 19 | 2026-09-01"
+  assert_not_contains "$out" "| 20 | 2026-09-01"
+}
+
+test_find_parses_the_list_form_of_supersedes() {
+  local home out48 out57
+  home=$(tmpdir)
+  mkdir -p "$home"
+  cat > "$home/decisions.md" <<'EOF'
+---
+capstan_type: decision-log
+---
+
+# Decisions
+
+| # | Date | Decision | Status |
+|---|------|----------|--------|
+| 58 | 2026-09-01 | Supersedes 36, 43, 46, 49, 51, 54 and 57 | accepted |
+| 188 | 2026-09-01 | Supersedes 40, 48, 50, 58 | accepted |
+| 48 | 2026-09-01 | one of the rows the list above supersedes | superseded by 188 |
+| 57 | 2026-09-01 | another of the rows the list above supersedes | superseded by 58 |
+EOF
+  out48=$("$LOG" find "$home" 48)
+  assert_contains "$out48" "| 48 | 2026-09-01"
+  assert_contains "$out48" "| 188 | 2026-09-01"
+
+  out57=$("$LOG" find "$home" 57)
+  assert_contains "$out57" "| 57 | 2026-09-01"
+  assert_contains "$out57" "| 58 | 2026-09-01"
+}
+
+# --- S4: check, next and find require decisions.md --------------------------
+
+test_check_next_find_require_the_active_log() {
+  local home code
+  home=$(tmpdir)
+  mkdir -p "$home"
+  "$LOG" check "$home" >/dev/null 2>&1 && code=0 || code=$?
+  assert_exit 1 "$code"
+  "$LOG" next "$home" >/dev/null 2>&1 && code=0 || code=$?
+  assert_exit 1 "$code"
+  "$LOG" find "$home" 1 >/dev/null 2>&1 && code=0 || code=$?
+  assert_exit 1 "$code"
+}
+
+# --- S5: trim strips tabs, not only spaces ----------------------------------
+
+test_status_with_a_trailing_tab_is_still_recognised_as_open() {
+  local home out
+  home=$(tmpdir)
+  mkdir -p "$home"
+  printf -- '---\ncapstan_type: decision-log\n---\n\n# Decisions\n\n| # | Date | Decision | Status |\n|---|------|----------|--------|\n' > "$home/decisions.md"
+  printf '| 1 | 2026-09-01 | a row whose status cell carries a trailing tab after the word | open\t|\n' >> "$home/decisions.md"
+  out=$("$LOG" rotate "$home" --keep 0 --threshold 0)
+  assert_contains "$out" "kept 1 rows"
+  assert_contains "$(cat "$home/decisions.md")" "| 1 | 2026-09-01"
+}
+
+# --- T1: --keep 0, and a missing flag value ---------------------------------
+
+test_rotate_keep_zero_works_under_this_shells_head() {
+  local home out
+  home=$(tmpdir)
+  make_ten_row_log "$home"
+  out=$("$LOG" rotate "$home" --keep 0 --threshold 1)
+  # Open, assumed and unformed still stay; nothing else does with keep 0.
+  assert_contains "$out" "kept 3 rows"
+  local active
+  active=$(cat "$home/decisions.md")
+  for n in 10 8 6; do
+    assert_contains "$active" "| $n | 2026-09-01"
+  done
+  for n in 9 7 5 4 3 2 1; do
+    assert_not_contains "$active" "| $n | 2026-09-01"
+  done
+}
+
+test_rotate_missing_flag_value_is_a_usage_error() {
+  local home code out
+  home=$(tmpdir)
+  make_ten_row_log "$home"
+
+  out=$("$LOG" rotate "$home" --keep 2>&1) && code=0 || code=$?
+  assert_exit 64 "$code"
+  assert_contains "$out" "--keep needs a value"
+
+  out=$("$LOG" rotate "$home" --threshold 2>&1) && code=0 || code=$?
+  assert_exit 64 "$code"
+  assert_contains "$out" "--threshold needs a value"
+}
+
 run_tests
