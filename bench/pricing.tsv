@@ -1,33 +1,22 @@
 # bench/pricing.tsv. Confirm before use.
 #
-# Source: https://claude.com/pricing, fetched 2026-09-22. Figures copied from
-# .capstan/effort/scout/session-log-format.md, section 7. Confidence there is
-# marked medium. The fetch was summarised by a tool rather than quoted from
-# the page verbatim. One unrelated web search returned different numbers for
-# a different-generation model it called "Sonnet 4.6". Re-check the live page
-# before trusting a run's cost total.
-#
-# The pricing page quoted one cache-write figure per model, not a 5-minute and
-# a 1-hour figure separately. cache_write_5m_per_mtok holds that figure.
-# cache_write_1h_per_mtok is left blank because no source gives a separate
-# 1-hour rate. session-usage treats a blank rate as unpriced for that
-# component and marks the total partial rather than guessing the 5-minute
-# rate applies.
+# Source: https://platform.claude.com/docs/en/about-claude/pricing, fetched
+# 2026-09-23. Every figure below is copied straight from that page's Model
+# pricing table: base input tokens, 5m cache writes, 1h cache writes,
+# cache hits and refreshes, and output tokens. Re-check the live page
+# before trusting a run's cost total; prices change over time.
 #
 # The model column must match a session's message.model string exactly, or
-# session-usage reports that model as unpriced rather than guessing a match.
-# claude-sonnet-5, claude-opus-5-5 and claude-fable-5-1 below are real
-# message.model strings. Confirmed by grepping for "model":"claude- across
-# ~/.claude/projects/ on 2026-09-22.
-#
-# claude-opus-5 also appears in real transcripts, but the only sourced price
-# found is for Opus 5.5, a different model. claude-opus-5 has no row here and
-# prints unpriced until a source prices it.
+# session-usage reports that model as unpriced rather than guessing a
+# match. claude-sonnet-5, claude-opus-5-5, claude-opus-5 and
+# claude-fable-5-1 below are real message.model strings, confirmed by
+# grepping for "model":"claude- across ~/.claude/projects/ on 2026-09-22.
 #
 # claude-haiku-4-5-20251001 has a sourced price but no transcript on this
 # machine confirms that exact model string. Treat its row as unconfirmed.
 model	input_per_mtok	output_per_mtok	cache_write_5m_per_mtok	cache_write_1h_per_mtok	cache_read_per_mtok
-claude-opus-5-5	4.00	20.00	5.00		0.20
-claude-sonnet-5	2.00	10.00	2.50		0.20
-claude-haiku-4-5-20251001	1.00	5.00	1.25		0.10
-claude-fable-5-1	10.00	50.00	12.50		0.25
+claude-opus-5-5	4.00	20.00	5.00	8.00	0.20
+claude-opus-5	5.00	25.00	6.25	10.00	0.50
+claude-sonnet-5	2.00	10.00	2.50	4.00	0.20
+claude-haiku-4-5-20251001	1.00	5.00	1.25	2.00	0.10
+claude-fable-5-1	10.00	50.00	12.50	20.00	0.25

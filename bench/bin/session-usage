@@ -1,24 +1,32 @@
 #!/usr/bin/env bash
 #
-# session-usage: token totals and cost for one Claude Code session, deduped
-# by message.id, including its subagent transcripts.
+# session-usage: token totals and cost for one or more Claude Code sessions,
+# deduped by message.id across all of them, including their subagent
+# transcripts.
 #
 # Usage:
-#   session-usage <session.jsonl | session-dir>
+#   session-usage <session.jsonl-or-dir> [<session.jsonl-or-dir> ...]
 #
 # A session's main transcript and its per-session directory are siblings,
 # the way Claude Code lays them out on disk: <dir>/<session-id>.jsonl next
 # to <dir>/<session-id>/subagents/agent-*.jsonl. Either path resolves the
 # other, so a session.jsonl file and its session-dir give the same answer.
+# Pass several session paths in one call to dedupe across all of them: a
+# later session's opening turns can be a copy of an earlier one's, the way
+# `/branch` and `--fork-session` write them, and counting both copies would
+# double the total.
 #
 # Only `type=="assistant"` lines count. A model of `<synthetic>` is skipped:
 # it is a placeholder line, not a real model call. One API turn can be split
-# across several JSONL lines that share one message.id. Only the last line
-# of a split turn, the one carrying `stop_reason`, holds the turn's final
-# usage numbers; earlier lines carry a partial output count. This script
-# keeps, per message.id, the usage from the line that carries `stop_reason`,
-# and falls back to the maximum of each usage field across the group for a
-# turn that never completed. The timestamp kept is the group's latest line.
+# across several JSONL lines that share one message.id. In a subagent
+# transcript, an earlier line of a split turn carries a partial output
+# count and the final line carries the turn's completed usage. `stop_reason`
+# can appear on more than one of those lines, or on none of them, so it
+# marks a line rather than counting how many lines carry it. This script
+# keeps, per message.id, the usage from the latest-timestamped line that
+# carries `stop_reason`, and falls back to the maximum of each usage field
+# across the group for a turn that never completed (no line carries
+# `stop_reason` at all). The timestamp kept is the group's latest line.
 #
 # Pricing comes from bench/pricing.tsv next to this script's bench/, or from
 # the file named by SESSION_USAGE_PRICING when that is set. A model absent
@@ -49,31 +57,40 @@ usage() {
   exit 64
 }
 
-[[ $# -eq 1 ]] || usage
-input="$1"
+[[ $# -ge 1 ]] || usage
 command -v jq >/dev/null 2>&1 || die 2 "jq is required and was not found on PATH"
 
-if [[ -d "$input" ]]; then
-  session_dir=$(cd "$input" && pwd)
-  session_id=$(basename "$session_dir")
-  main="$(dirname "$session_dir")/$session_id.jsonl"
-elif [[ -f "$input" ]]; then
-  main_dir=$(cd "$(dirname "$input")" && pwd)
-  main="$main_dir/$(basename "$input")"
-  session_id=$(basename "$main" .jsonl)
-  session_dir="$main_dir/$session_id"
-else
-  die 2 "no such file or directory: $input"
-fi
+# add_session_files INPUT appends INPUT's main transcript and its
+# subagents/agent-*.jsonl files to the shared `files` array. Called once
+# per argument, so several session paths accumulate into one `files` list
+# that the dedupe pass below treats as a single session.
+add_session_files() {
+  local input="$1" session_dir session_id main main_dir f
+  if [[ -d "$input" ]]; then
+    session_dir=$(cd "$input" && pwd)
+    session_id=$(basename "$session_dir")
+    main="$(dirname "$session_dir")/$session_id.jsonl"
+  elif [[ -f "$input" ]]; then
+    main_dir=$(cd "$(dirname "$input")" && pwd)
+    main="$main_dir/$(basename "$input")"
+    session_id=$(basename "$main" .jsonl)
+    session_dir="$main_dir/$session_id"
+  else
+    die 2 "no such file or directory: $input"
+  fi
+  [[ -f "$main" ]] && files+=("$main")
+  if [[ -d "$session_dir/subagents" ]]; then
+    for f in "$session_dir"/subagents/agent-*.jsonl; do
+      [[ -e "$f" ]] && files+=("$f")
+    done
+  fi
+}
 
 files=()
-[[ -f "$main" ]] && files+=("$main")
-if [[ -d "$session_dir/subagents" ]]; then
-  for f in "$session_dir"/subagents/agent-*.jsonl; do
-    [[ -e "$f" ]] && files+=("$f")
-  done
-fi
-[[ ${#files[@]} -gt 0 ]] || die 2 "no transcript found for $input (looked for $main and $session_dir/subagents/agent-*.jsonl)"
+for input in "$@"; do
+  add_session_files "$input"
+done
+[[ ${#files[@]} -gt 0 ]] || die 2 "no transcript found for $* (looked for a main .jsonl file and a subagents/agent-*.jsonl directory next to each)"
 
 bin_dir=$(cd "$(dirname "$0")" && pwd)
 pricing="${SESSION_USAGE_PRICING:-$bin_dir/../pricing.tsv}"
@@ -135,7 +152,19 @@ input_line_number as $lineno
   end
 '
 
+padded="$tmp/padded.jsonl"
+lines="$tmp/lines"
 for f in "${files[@]}"; do
+  # A process substitution here would hide jq's exit status from `set -e`
+  # and from the `|| die` below, so an unreadable file would print nothing
+  # and the script would exit 0 with a total that silently drops that
+  # file's tokens. Reading through a real file avoids that, and copying to
+  # $padded first guarantees a trailing newline: without one, jq's
+  # `input_line_number` undercounts the true line number of a malformed
+  # final line by one.
+  cat "$f" > "$padded" 2>/dev/null || die 1 "$f: could not be read"
+  printf '\n' >> "$padded"
+  jq -R -r "$LINE_FILTER" "$padded" > "$lines" || die 1 "$f: could not be read"
   while IFS= read -r out; do
     case "$out" in
       SKIP) ;;
@@ -149,7 +178,7 @@ for f in "${files[@]}"; do
         printf '%s\n' "${out#OK$'\t'}" >> "$records"
         ;;
     esac
-  done < <(jq -R -r "$LINE_FILTER" "$f")
+  done < "$lines"
 done
 
 # Dedupe per message.id, taking the stop_reason line's usage when a group

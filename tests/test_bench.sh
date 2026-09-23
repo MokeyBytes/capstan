@@ -131,10 +131,12 @@ test_no_priced_model_prints_unpriced_total_not_zero() {
 }
 
 test_blank_rate_prices_known_components_and_flags_the_rest_partial() {
-  # cache_write_1h_per_mtok is blank, matching the shipped pricing.tsv.
-  # A session with nonzero cache_write_1h usage cannot be fully priced:
-  # the known components are still summed, and the row and total both say
-  # which component is missing rather than silently pricing it at 0.
+  # This fixture's own pricing file leaves cache_write_1h_per_mtok blank,
+  # unlike the shipped pricing.tsv, which now prices it. A session with
+  # nonzero cache_write_1h usage cannot be fully priced when the pricing
+  # file supplying that rate is missing it: the known components are still
+  # summed, and the row and total both say which component is missing
+  # rather than silently pricing it at 0.
   local fixture pricing out
   fixture=$(tmpdir)/cw1h.jsonl
   printf '{"type":"assistant","message":{"id":"msg_x","model":"claude-opus-5","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":40}}},"timestamp":"2026-09-21T09:00:00.000Z"}\n' > "$fixture"
@@ -144,6 +146,64 @@ test_blank_rate_prices_known_components_and_flags_the_rest_partial() {
   out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$fixture")
   assert_contains "$out" "0.0014 (partial: cache_write_1h unpriced)" "the known components are priced and the missing one is named"
   assert_contains "$out" "partial: cache_write_1h unpriced for claude-opus-5" "the total names the model and the missing component"
+}
+
+test_multiple_session_paths_dedupe_shared_ids_and_sum_the_rest() {
+  # ses0002.jsonl repeats ses0001.jsonl's msg_fixtureA turn verbatim, the
+  # way `/branch` and `--fork-session` copy a session's opening turns into
+  # a new file, then adds one turn of its own, msg_fixtureC (sonnet, one
+  # line): input 10,000, output 2,000. Passed together in one call,
+  # msg_fixtureA must count once, not twice.
+  local pricing out
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-opus-5\t4.00\t20.00\t5.00\t\t0.20\n' >> "$pricing"
+  printf 'claude-sonnet-5\t2.00\t10.00\t2.50\t\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$FIXTURES/ses0001.jsonl" "$FIXTURES/ses0002.jsonl")
+  assert_contains "$out" "$(printf 'claude-sonnet-5\t1710000\t752016\t0\t0\t0\t10.94016')" "sonnet totals across both files: msg_fixtureA counted once, msg_fixtureC added on top"
+  assert_contains "$out" "$(printf 'TOTAL\t3710000\t852016\t500000\t0\t1000000\t23.64016')" "grand total across both files and both models"
+}
+
+test_second_file_alone_does_not_repeat_the_shared_turn() {
+  # Confirms ses0002.jsonl on its own counts msg_fixtureA once, so the
+  # dedupe in the previous test is credited to the multi-path call and not
+  # to some property of ses0002.jsonl alone.
+  local pricing out
+  pricing=$(tmpdir)/pricing.tsv
+  printf 'model\tinput_per_mtok\toutput_per_mtok\tcache_write_5m_per_mtok\tcache_write_1h_per_mtok\tcache_read_per_mtok\n' > "$pricing"
+  printf 'claude-sonnet-5\t2.00\t10.00\t2.50\t\t0.20\n' >> "$pricing"
+  out=$(SESSION_USAGE_PRICING="$pricing" "$SESSION_USAGE" "$FIXTURES/ses0002.jsonl")
+  assert_contains "$out" "$(printf 'TOTAL\t1010000\t502000\t0\t0\t0')" "ses0002.jsonl alone: msg_fixtureA plus msg_fixtureC"
+}
+
+test_unreadable_file_fails_loudly_rather_than_dropping_silently() {
+  # Round-2 regression: a process substitution hid an unreadable file's
+  # failure from `set -e`, so the total printed without the missing file's
+  # tokens and exited 0. Skipped under root, which ignores file mode bits.
+  if [[ "$(id -u)" -eq 0 ]]; then
+    printf '%s: skipped, running as root\n' "$_T_CURRENT"
+    return 0
+  fi
+  local dir out code
+  dir=$(tmpdir)
+  cp -R "$FIXTURES/ses0001.jsonl" "$FIXTURES/ses0001" "$dir/"
+  chmod 000 "$dir/ses0001/subagents/agent-fixturesub.jsonl"
+  out=$("$SESSION_USAGE" "$dir/ses0001.jsonl" 2>&1) && code=0 || code=$?
+  chmod 644 "$dir/ses0001/subagents/agent-fixturesub.jsonl"
+  assert_exit 1 "$code" "an unreadable subagent file is refused, not silently dropped from the total"
+  assert_contains "$out" "could not be read" "the refusal names the read failure"
+  assert_not_contains "$out" "TOTAL" "no total is printed once a file cannot be read"
+}
+
+test_last_line_without_a_trailing_newline_reports_its_true_line_number() {
+  # noeol0001.jsonl's third and final line is missing message.usage and has
+  # no trailing newline. Round-2 regression: jq's input_line_number
+  # undercounts by one when the last line has no trailing newline, so this
+  # reported line 2 instead of line 3.
+  local out code
+  out=$("$SESSION_USAGE" "$FIXTURES/noeol0001.jsonl" 2>&1) && code=0 || code=$?
+  assert_exit 1 "$code" "the malformed last line is still refused"
+  assert_contains "$out" ":3:" "the line missing a trailing newline is still named by its real line number, 3"
 }
 
 test_usage_error_with_no_arguments() {
