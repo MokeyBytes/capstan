@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+#
+# session-usage: token totals and cost for one Claude Code session, deduped
+# by message.id, including its subagent transcripts.
+#
+# Usage:
+#   session-usage <session.jsonl | session-dir>
+#
+# A session's main transcript and its per-session directory are siblings,
+# the way Claude Code lays them out on disk: <dir>/<session-id>.jsonl next
+# to <dir>/<session-id>/subagents/agent-*.jsonl. Either path resolves the
+# other, so a session.jsonl file and its session-dir give the same answer.
+#
+# Only `type=="assistant"` lines count. A model of `<synthetic>` is skipped:
+# it is a placeholder line, not a real model call. One API turn can be
+# split across several JSONL lines that each carry the same message.id and
+# the same usage block; this script counts each message.id once.
+#
+# Pricing comes from bench/pricing.tsv next to this script's bench/, or from
+# the file named by SESSION_USAGE_PRICING when that is set. A model absent
+# from the pricing file is reported as "unpriced", never as a cost of 0.
+#
+# Exit codes:
+#   0  done
+#   1  an assistant line is missing message.usage or message.model, or a
+#      line is not valid JSON
+#   2  no transcript found, or no pricing file found
+#   64 usage error
+#
+
+set -euo pipefail
+
+die() { # code message...
+  local code="$1"; shift
+  printf 'session-usage: %s\n' "$*" >&2
+  exit "$code"
+}
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 64
+}
+
+[[ $# -eq 1 ]] || usage
+input="$1"
+command -v jq >/dev/null 2>&1 || die 2 "jq is required and was not found on PATH"
+
+if [[ -d "$input" ]]; then
+  session_dir=$(cd "$input" && pwd)
+  session_id=$(basename "$session_dir")
+  main="$(dirname "$session_dir")/$session_id.jsonl"
+elif [[ -f "$input" ]]; then
+  main_dir=$(cd "$(dirname "$input")" && pwd)
+  main="$main_dir/$(basename "$input")"
+  session_id=$(basename "$main" .jsonl)
+  session_dir="$main_dir/$session_id"
+else
+  die 2 "no such file or directory: $input"
+fi
+
+files=()
+[[ -f "$main" ]] && files+=("$main")
+if [[ -d "$session_dir/subagents" ]]; then
+  for f in "$session_dir"/subagents/agent-*.jsonl; do
+    [[ -e "$f" ]] && files+=("$f")
+  done
+fi
+[[ ${#files[@]} -gt 0 ]] || die 2 "no transcript found for $input (looked for $main and $session_dir/subagents/agent-*.jsonl)"
+
+bin_dir=$(cd "$(dirname "$0")" && pwd)
+pricing="${SESSION_USAGE_PRICING:-$bin_dir/../pricing.tsv}"
+[[ -f "$pricing" ]] || die 2 "no pricing file at $pricing"
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/session-usage.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+records="$tmp/records.jsonl"
+: > "$records"
+
+# Classify one assistant-or-not line: skip it, name a missing field, or emit
+# the fields the aggregation pass needs. Kept as one jq call per line so a
+# malformed line is caught before anything is summed.
+# The $ names below are jq variables, not shell variables: single-quoted on
+# purpose.
+# shellcheck disable=SC2016
+LINE_FILTER='
+if .type != "assistant" then {_t:"skip"}
+elif .message.model == "<synthetic>" then {_t:"skip"}
+elif (.message == null) or (.message.usage == null) then {_t:"error", field:"message.usage"}
+elif (.message.model == null) then {_t:"error", field:"message.model"}
+else {
+  _t: "ok",
+  id: .message.id,
+  model: .message.model,
+  ts: (.timestamp // null),
+  input: (.message.usage.input_tokens // 0),
+  output: (.message.usage.output_tokens // 0),
+  cw5m: (.message.usage.cache_creation.ephemeral_5m_input_tokens // 0),
+  cw1h: (.message.usage.cache_creation.ephemeral_1h_input_tokens // 0),
+  cread: (.message.usage.cache_read_input_tokens // 0)
+} end
+'
+
+for f in "${files[@]}"; do
+  lineno=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    [[ -n "$line" ]] || continue
+    if ! info=$(printf '%s\n' "$line" | jq -c "$LINE_FILTER" 2>/dev/null); then
+      die 1 "$f:$lineno: not a valid JSON line"
+    fi
+    kind=$(printf '%s' "$info" | jq -r '._t')
+    case "$kind" in
+      skip) ;;
+      error)
+        field=$(printf '%s' "$info" | jq -r '.field')
+        die 1 "$f:$lineno: assistant line missing $field"
+        ;;
+      ok) printf '%s\n' "$info" >> "$records" ;;
+    esac
+  done < "$f"
+done
+
+# Sum per model across every kept line, deduped by message.id, and price
+# each model's total from pricing.tsv when a row matches.
+# shellcheck disable=SC2016
+AGG='
+def notnull: select(. != null);
+($pricing_text
+  | split("\n")
+  | map(select(length > 0))
+  | map(select(startswith("#") | not))
+) as $plines
+| ($plines[1:] | map(split("\t")) | map({
+    model: .[0],
+    input: (.[1] | tonumber),
+    output: (.[2] | tonumber),
+    cw5m: (.[3] | tonumber),
+    cw1h: (.[4] | tonumber),
+    cread: (.[5] | tonumber)
+  }) | INDEX(.model)) as $pmap
+| ($records | unique_by(.id)) as $deduped
+| ($deduped | map(.ts) | map(notnull) | sort) as $ts
+| ($deduped | group_by(.model) | map({
+    model: .[0].model,
+    input: (map(.input) | add),
+    output: (map(.output) | add),
+    cw5m: (map(.cw5m) | add),
+    cw1h: (map(.cw1h) | add),
+    cread: (map(.cread) | add)
+  })) as $rows
+| ($rows | map(
+    . as $r
+    | ($pmap[$r.model]) as $p
+    | $r + { cost: (
+        if $p == null then null
+        else ($r.input / 1000000 * $p.input)
+           + ($r.output / 1000000 * $p.output)
+           + ($r.cw5m / 1000000 * $p.cw5m)
+           + ($r.cw1h / 1000000 * $p.cw1h)
+           + ($r.cread / 1000000 * $p.cread)
+        end
+      ) }
+  )) as $priced
+| {
+    rows: $priced,
+    total_input: ($rows | map(.input) | add // 0),
+    total_output: ($rows | map(.output) | add // 0),
+    total_cw5m: ($rows | map(.cw5m) | add // 0),
+    total_cw1h: ($rows | map(.cw1h) | add // 0),
+    total_cread: ($rows | map(.cread) | add // 0),
+    total_cost: ($priced | map(select(.cost != null) | .cost) | add // 0),
+    unpriced_models: ($priced | map(select(.cost == null) | .model)),
+    first_ts: ($ts[0] // null),
+    last_ts: ($ts[-1] // null)
+  }
+'
+
+# shellcheck disable=SC2016
+FORMAT='
+(.rows[] | [.model, (.input|tostring), (.output|tostring), (.cw5m|tostring), (.cw1h|tostring), (.cread|tostring),
+   (if .cost == null then "unpriced" else (.cost|tostring) end)]),
+(["TOTAL", (.total_input|tostring), (.total_output|tostring), (.total_cw5m|tostring), (.total_cw1h|tostring), (.total_cread|tostring),
+   (if (.unpriced_models|length) > 0
+    then (.total_cost|tostring) + " (partial: unpriced " + (.unpriced_models|join(",")) + ")"
+    else (.total_cost|tostring) end)]),
+(["first_timestamp", (.first_ts // "none")]),
+(["last_timestamp", (.last_ts // "none")])
+| @tsv
+'
+
+printf 'model\tinput_tokens\toutput_tokens\tcache_write_5m_tokens\tcache_write_1h_tokens\tcache_read_tokens\tcost_usd\n'
+jq -n --slurpfile records "$records" --arg pricing_text "$(cat "$pricing")" "$AGG" | jq -r "$FORMAT"

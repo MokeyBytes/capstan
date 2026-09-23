@@ -1,0 +1,28 @@
+# bench/pricing.tsv — confirm before use.
+#
+# Source: https://claude.com/pricing (redirected from anthropic.com/pricing),
+# fetched 2026-09-22. Figures copied from
+# .capstan/effort/scout/session-log-format.md, section 7. Confidence there is
+# marked "medium": the fetch was summarised by a tool rather than quoted from
+# the page verbatim, and one unrelated web search returned different numbers
+# for a different-generation model it called "Sonnet 4.6". Re-check the live
+# page before trusting a run's cost total.
+#
+# The pricing page quoted one "cache write" figure per model, not a 5-minute
+# and a 1-hour figure separately. Both cache-write columns below repeat that
+# one figure. Treat the cache_write_1h column as unconfirmed until the
+# pricing page is checked again for a separate 1-hour rate.
+#
+# The model column must match a session's `message.model` string exactly, or
+# session-usage reports that model as unpriced rather than guessing a match.
+# claude-opus-5 and claude-sonnet-5 below are confirmed `message.model`
+# strings, read from real transcripts on this machine (see
+# scout/session-log-format.md, section 3, and the Architect-supplied fact
+# for subagent files). claude-haiku-4.5 and claude-fable-5.1 are this
+# script's guess at the naming pattern, not confirmed against a real
+# transcript; confirm both before trusting a run that used either model.
+model	input_per_mtok	output_per_mtok	cache_write_5m_per_mtok	cache_write_1h_per_mtok	cache_read_per_mtok
+claude-opus-5	4.00	20.00	5.00	5.00	0.20
+claude-sonnet-5	2.00	10.00	2.50	2.50	0.20
+claude-haiku-4.5	1.00	5.00	1.25	1.25	0.10
+claude-fable-5.1	10.00	50.00	12.50	12.50	0.25

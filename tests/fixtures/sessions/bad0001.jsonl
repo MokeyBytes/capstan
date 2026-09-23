@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"synthetic fixture prompt, no real content"},"timestamp":"2026-09-21T09:00:00.000Z"}
+{"type":"assistant","message":{"id":"msg_fixtureBad","model":"claude-sonnet-5","role":"assistant","content":[{"type":"text","text":"synthetic reply with a truncated usage block"}]},"timestamp":"2026-09-21T09:01:00.000Z"}

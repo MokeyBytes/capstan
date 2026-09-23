@@ -28,7 +28,7 @@ done
 
 if command -v shellcheck >/dev/null 2>&1; then
   printf '== shellcheck\n'
-  if shellcheck -s bash skills/effort/bin/* skills/walkthrough/template.sh tests/*.sh tests/mock/*; then
+  if shellcheck -s bash skills/effort/bin/* skills/walkthrough/template.sh bench/bin/* tests/*.sh tests/mock/*; then
     printf '  ok   shellcheck\n'
   else
     status=1
@@ -37,7 +37,7 @@ else
   printf '== shellcheck not installed, skipped\n'
 fi
 
-for f in skills/effort/bin/* skills/walkthrough/template.sh; do
+for f in skills/effort/bin/* skills/walkthrough/template.sh bench/bin/*; do
   bash -n "$f" || status=1
 done
 

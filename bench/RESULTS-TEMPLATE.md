@@ -1,0 +1,16 @@
+# Benchmark results
+
+Filled in from real runs of `bench/PROTOCOL.md`, one row per arm per repository. Every cell starts blank. A blank cell means the run has not measured it yet; it is never filled with a guess.
+
+| Repository | Issue | Arm | Pinned commit | Tokens (model: in/out/cache-write-5m/cache-write-1h/cache-read) | Cost (model: $) | Wall-clock time | Gates reached | Operator interventions | Declared checks pass? | Review findings that caught a real defect | Transcript path |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| | | baseline | | | | | | | | | |
+| | | capstan | | | | | | | | | |
+| | | baseline | | | | | | | | | |
+| | | capstan | | | | | | | | | |
+| | | baseline | | | | | | | | | |
+| | | capstan | | | | | | | | | |
+
+## Notes
+
+Record anything that does not fit a cell here: a repository swapped for the spare, a pre-flight failure, a session that needed more than one `session-usage` run added by hand, a check that could not run and why.
