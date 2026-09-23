@@ -63,11 +63,11 @@ Created empty, it can still be empty when this run ends, most often a fresh repo
 
 ### 2. Check the destination
 
-Before anything else, if `capstan-tracker` names a GitHub surface and `tracker.md` still exists at the home currently in force, stop: a board migration is unfinished, and `/capstan-board:setup` must complete it before this skill moves the document home. Moving the home out from under an unfinished migration is what strands the rows still sitting in `tracker.md`, on either leg.
-
-The artifacts this step and step 3 track are `CONTEXT.md`, `decisions.md` and `decisions/`, always, plus `tracker.md` too when `capstan-tracker` is unset across `<working copy>/CLAUDE.md` and `<working copy>/AGENTS.md` — read once, here, rather than asked about: changing which surface is in force is `/capstan-board:setup`'s question, not this skill's. When `capstan-tracker` names a GitHub surface there is no `tracker.md` at all otherwise: it is never part of this set, and its absence is never a collision. `decisions/archive/` travels inside `decisions/` as one of its own contents, not a fifth artifact of its own, so tracking and moving `decisions/` whole already carries it. Call this set **the artifacts** for the rest of this step and the next.
+The artifacts this step and step 3 track are `CONTEXT.md`, `decisions.md` and `decisions/`, always, plus `tracker.md` too when `capstan-tracker` is unset across `<working copy>/CLAUDE.md` and `<working copy>/AGENTS.md` — read once, here, rather than asked about: changing which surface is in force is `/capstan-board:setup`'s question, not this skill's. Outside that unfinished-migration case, a GitHub surface has no `tracker.md`: it is never part of this set, and its absence is never a collision. `decisions/archive/` travels inside `decisions/` as one of its own contents, not a fifth artifact of its own, so tracking and moving `decisions/` whole already carries it. Call this set **the artifacts** for the rest of this step and the next.
 
 When the confirmed path is the home currently in force already, there is nothing to check or move: continue at step 4. This is the ordinary case of confirming the same answer back, even on a project too new to have any of the artifacts yet; whether it existed a moment ago is already said above.
+
+Otherwise, if `capstan-tracker` names a GitHub surface and `tracker.md` still exists at the home currently in force, stop: a board migration is unfinished, and `/capstan-board:setup` must complete it before this skill moves the document home. Moving the home out from under an unfinished migration is what strands the rows still sitting in `tracker.md`, on either leg.
 
 Otherwise, check whether the confirmed path already holds any of the artifacts.
 

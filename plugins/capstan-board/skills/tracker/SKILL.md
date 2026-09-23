@@ -5,9 +5,9 @@ description: Read or write Capstan's slice tracker on a GitHub Projects v2 board
 
 # Tracker: GitHub surface
 
-The helpers this skill runs live in `bin/` beside this file. Resolve that folder to an absolute path from wherever this skill was loaded — `${CLAUDE_PLUGIN_ROOT}/skills/tracker/bin` under a plugin install, `bin/` beside this file under a manual one — and call it `<bin>` below. This plugin cannot read core's files, so it never resolves `<bin>` against `capstan`'s own `bin/`.
+The helpers this skill runs live in `bin/` beside this file. Resolve that folder to an absolute path from wherever this skill was loaded — `${CLAUDE_PLUGIN_ROOT}/skills/tracker/bin` — and call it `<bin>` below. This plugin cannot read core's files, so it never resolves `<bin>` against `capstan`'s own `bin/`.
 
-Under an effort, where core's `effort` skill is already loaded, the visibility gate that decides whether a write needs the operator's confirmation lives in the Authority table there, and only there. Read it before writing anything to this surface. A caller outside an effort — this plugin's own `setup` skill among them, which cannot load that skill — states its own approval rule inline instead of pointing here.
+Wherever core's `effort` skill is already loaded — under an effort or a quick — the visibility gate that decides whether a write needs the operator's confirmation lives in the Authority table there, and only there. Read it before writing anything to this surface. A caller that cannot load that skill — this plugin's own `setup` skill among them — states its own approval rule inline instead of pointing here.
 
 ## The column mapping
 
@@ -157,7 +157,7 @@ It prints one tab-separated row per slice — `effort`, `slice`, `status`, `comm
 
 Underneath, the helper runs `gh project item-list <project-number> --owner <owner> --format json --limit <n>` with a `--jq` projection. `--format json` is what puts the milestone and the custom field on the item at all, and in that JSON the field is keyed `capstan Status`, not `Capstan Status`: GitHub lowercases only the first word of a custom field's name when it renders it, leaving the option values untouched. Querying the display name exits zero and returns nothing against a field that is set, which is the trap the helper exists to keep out of an agent's hands.
 
-`diff` compares the board against a `tracker.md`, keyed by effort **and** slice, never slice alone: two efforts can each have a `docs`. It exits 0 only when both hold the same keys with the same status, and the same commit on `merged` rows, and otherwise prints every difference — `status-changed`, `commit-changed`, `board-only`, `file-only` — and exits 4. this plugin's own `setup` skill runs it before either migration leg deletes or tears anything down.
+`diff` compares the board against a `tracker.md`, keyed by effort **and** slice, never slice alone: two efforts can each have a `docs`. It exits 0 only when both hold the same keys with the same status, and the same commit on `merged` rows, and otherwise prints every difference — `status-changed`, `commit-changed`, `board-only`, `file-only` — and exits 4. This plugin's own `setup` skill runs it before either migration leg deletes or tears anything down.
 
 ## Why never the built-in `Status`
 

@@ -31,7 +31,7 @@ This skill never writes or moves `capstan-document-home`, and never moves the ar
 
 ## The tracker-surface ask
 
-Before asking, read `capstan-tracker` from `<working copy>/CLAUDE.md` and `<working copy>/AGENTS.md`, both by absolute path, under the same bare-line rule as `capstan-document-home` above: a bare `capstan-tracker: <value>` line, never frontmatter. Reject the key appearing twice in one file and an empty value, the same way and for the same reason as above; each ends the run, reported so the operator can fix the file by hand. Report the value currently in force before asking anything else, under "Currently:": "`tracker.md` in the document home." when unset, the value itself when one file carries it, or the two-file disagreement, worded the same way as above, when they differ, asking which is correct before anything else and treating that answer as the value in force from here on.
+Before asking, read `capstan-tracker` from `<working copy>/CLAUDE.md` and `<working copy>/AGENTS.md`, both by absolute path, under the same bare-line rule as `capstan-document-home` above: a bare `capstan-tracker: <value>` line, never frontmatter. Reject the key appearing twice in one file and an empty value, the same way and for the same reason as above; each ends the run, reported so the operator can fix the file by hand. Report the value currently in force before asking anything else, under "Currently:": "`tracker.md` in the document home." when unset, the value itself when one file carries it, or, when they differ, "`CLAUDE.md` says `<value>`. `AGENTS.md` says `<value>`.", asking which is correct before anything else and treating that answer as the value in force from here on.
 
 Ask where slice state should live:
 
@@ -70,7 +70,7 @@ gh project list --owner <owner>
 
 ### 2. Before writing, on a migration
 
-Reached only when the tracker-surface ask settled on GitHub this run and `tracker.md` exists at the document home, deferred behind the scope check above for the same reason: an approval asked here should not outlive a run that check could still stop before anything is written. Read the Authority table in core's `effort` skill before writing or deleting anything below — the write and the delete it governs here are two different rows, not one gate, and only the write branches on visibility:
+Reached only when the tracker-surface ask settled on GitHub this run and `tracker.md` exists at the document home, deferred behind the scope check above for the same reason: an approval asked here should not outlive a run that check could still stop before anything is written. The write below and the delete below are gated separately, not by one check: only the write depends on visibility.
 
 ```bash
 gh repo view <owner>/<repo> --json visibility -q .visibility
@@ -97,9 +97,9 @@ This file carries configuration read by Capstan and by other agents working in t
 capstan-tracker: github:<owner>/<repo>#<project-number>
 ```
 
-This does not run yet when the value currently in force named a board: removing that line here, before **Back to `tracker.md`** below has read what the board still holds, would strand a resumed run with nothing left pointing at it. That step removes the line itself, once every row it found is torn down.
+The removal on the default does not run yet when the value currently in force named a board: removing that line here, before **Back to `tracker.md`** below has read what the board still holds, would strand a resumed run with nothing left pointing at it. That step removes the line itself, once every row it found is torn down.
 
-If the other of `CLAUDE.md` or `AGENTS.md` still carries a `capstan-tracker` line, remove it entirely: a stray line left standing states a second, contradicting answer for a project that now has one settled. Once `capstan-tracker` has settled where it lives, or been removed, delete a file only if it now carries neither `capstan-tracker` nor `capstan-document-home`, and nothing else — never delete a file still carrying the document-home key, which is core's, or any other content, rather than leave an empty file behind.
+If the other of `CLAUDE.md` or `AGENTS.md` still carries a `capstan-tracker` line, remove it entirely, and remove the introductory sentence too if that file now carries neither `capstan-tracker` nor `capstan-document-home` and nothing else, whichever run wrote that sentence — it names configuration no longer there, stray the same way the line was, even where other content in that file survives it. A stray line or sentence left standing states a second, contradicting answer for a project that now has one settled. Once `capstan-tracker` has settled where it lives, or been removed, and the sentence removed where it applied, delete the file itself if it now carries neither `capstan-tracker` nor `capstan-document-home`, and nothing else — never delete a file still carrying the document-home key, which is core's, or any other content, rather than leave an empty file behind. This rule applies wherever this skill removes `capstan-tracker`, step 4's reverse-migration removal below included.
 
 ### 4. Migrate the tracker surface
 
@@ -123,7 +123,7 @@ Read the board back through the helper this plugin's own `tracker` skill's readi
 
 Test resuming against completion, never existence: `tracker.md` already existing at the document home is not enough on its own — an interrupted forward migration leaves that same file behind, with rows the board has since moved past. Run `<bin>/capstan-tracker diff` against the file at the document home. This run is resuming an interrupted teardown only when every row the board still carries comes back `same` — matched on effort and slice together, never slice alone, since two efforts can each hold a `docs`, with the same status and, on a `merged` row, the same commit — and the only differences are `file-only` rows, which are rows already torn down; skip straight to teardown against whatever the board still carries. A `status-changed`, `commit-changed` or `board-only` line means the file is not this board's, and the run stops here reporting the diff rather than tearing anything down against it.
 
-Describe the batch before writing anything — how many rows, how many milestones, that the board is torn down once `tracker.md` is written and verified — and ask for one approval covering the whole teardown before writing, closing, or removing anything below: removing an item is a delete, so the operator approves it every time, on a public repository or a private one; and commenting on and closing issues in a public repository is visible to third parties, whether or not the delete would already have needed the approval. Declining says instead how many rows are on the board and that leaving `capstan-tracker` as it is strands them; nothing above this point on the reverse leg has changed the working copy, so there is nothing to roll back — the run stops there, `tracker.md` is not written, and the key is not removed.
+Describe the batch before writing anything — how many rows, how many milestones, that the board is torn down once `tracker.md` is written and verified — and ask for one approval covering the whole teardown before writing, closing, or removing anything below: removing an item is a delete, so the operator approves it every time, on a public repository or a private one; and commenting on and closing issues in a public repository is visible to third parties, whether or not the delete would already have needed the approval. Declining says instead how many rows are on the board and that leaving `capstan-tracker` as it is strands them; anything step 3 changed above this point stays uncommitted — the run stops there, `tracker.md` is not written, and the key is not removed.
 
 On approval: write `tracker.md` whole at the document home, one row per validated slice, under the column mapping this plugin's own `tracker` skill declares — `Commit` blank except on a `merged` row, where it carries the SHA its one conforming comment names. Verify it by running `<bin>/capstan-tracker diff` against the written file, on every branch: it has to exit 0, every row `same`, before any teardown begins. Any other exit leaves the board untouched and reports what was printed. At the default document home, add and commit `tracker.md` by path alone, before touching the board — whatever else this run has already changed does not ride along with it. At a configured document home, `tracker.md` is left there for the operator, per step 6; nothing here runs git there, per core's `effort` skill.
 
@@ -139,7 +139,7 @@ gh api repos/<owner>/<repo>/milestones/<milestone-number> -q .open_issues
 gh api -X PATCH repos/<owner>/<repo>/milestones/<milestone-number> -f state=closed
 ```
 
-Once every row this read found is torn down, remove `capstan-tracker` from wherever it lives. Step 5 commits that removal as its own commit — a second one, since the reconstruction above already went in on its own.
+Once every row this read found is torn down, remove `capstan-tracker` from wherever it lives, under step 3's delete rule above: remove the introductory sentence too, and the file itself, where that rule says to. Step 5 commits that removal as its own commit — a second one, since the reconstruction above already went in on its own.
 
 ### 5. Commit everything, once
 
