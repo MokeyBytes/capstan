@@ -81,24 +81,27 @@ assert_file_is() {
   assert_eq "$2" "${actual%x}" "${3:-content of $1}"
 }
 
-test_interrupted_write_leaves_no_temp_file() {
+test_write_fails_on_readonly_env() {
   local d
   # an error between building the temp file and copying it back. chmod 444
   # does not stop a write for root, which ignores the file mode, so this
-  # half only means something for a non-root runner.
-  if [[ "$(id -u)" -eq 0 ]]; then
+  # test only means something for a non-root runner.
+  if [[ "$(id -u)" == 0 ]]; then
     printf '  skip %s: skipped (root)\n' "$_T_CURRENT"
-  else
-    d=$(sandbox)
-    printf 'A=1\n' > "$d/.env"
-    chmod 444 "$d/.env"
-    run_lib "$d" "" 'write_env K "secret-value"'
-    chmod 644 "$d/.env"
-    assert_exit 1 "$CODE"
-    assert_file_is "$d/.env" $'A=1\n' "the file is untouched"
-    assert_eq "" "$(find "$d" -maxdepth 1 -name '.env.*' | head -n1)" "no temp file survives the failed write"
+    return
   fi
+  d=$(sandbox)
+  printf 'A=1\n' > "$d/.env"
+  chmod 444 "$d/.env"
+  run_lib "$d" "" 'write_env K "secret-value"'
+  chmod 644 "$d/.env"
+  assert_exit 1 "$CODE"
+  assert_file_is "$d/.env" $'A=1\n' "the file is untouched"
+  assert_eq "" "$(find "$d" -maxdepth 1 -name '.env.*' | head -n1)" "no temp file survives the failed write"
+}
 
+test_interrupted_write_leaves_no_temp_file() {
+  local d
   # Ctrl-C landing while the temp file exists
   d=$(sandbox)
   mkdir -p "$d/bin"
