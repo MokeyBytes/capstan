@@ -58,12 +58,11 @@ deny_has() { # pattern
   jq --arg p "$1" 'any(.permissions.deny[]?; . == $p)' "$JSON" 2>&1
 }
 
-# every_entry_has_valid_shape FILE returns the deny entries that are not a
+# malformed_entries FILE returns the deny entries that are not a
 # Bash, Read or Edit rule, or that anchor a Read/Edit rule with a single
 # leading slash, which settles at the settings source rather than the
-# filesystem root a reader would expect. An empty array means every entry
-# is well-formed.
-every_entry_has_valid_shape() {
+# filesystem root a reader would expect.
+malformed_entries() {
   jq -c '
     [.permissions.deny[] | select(
       (type != "string")
@@ -113,31 +112,31 @@ test_every_required_file_pattern_is_present() {
 
 test_every_deny_entry_has_valid_shape() {
   local out
-  out=$(every_entry_has_valid_shape "$JSON")
+  out=$(malformed_entries "$JSON")
   assert_eq "[]" "$out" "a deny entry is not a Bash, Read or Edit rule, or a Read/Edit rule anchors with a single leading slash"
 }
 
 test_shape_check_rejects_a_misspelled_tool_name() {
   local dir out
   dir=$(tmpdir)
-  jq '.permissions.deny += ["Raed(.env)"]' "$JSON" > "$dir/settings.json"
-  out=$(every_entry_has_valid_shape "$dir/settings.json")
+  jq '.permissions.deny += ["Raed(.env)"]' <<< '{"permissions":{"deny":["Read(.env)"]}}' > "$dir/settings.json"
+  out=$(malformed_entries "$dir/settings.json")
   assert_eq '["Raed(.env)"]' "$out" "shape check should flag Raed(.env)"
 }
 
 test_shape_check_rejects_a_non_string_entry() {
   local dir out
   dir=$(tmpdir)
-  jq '.permissions.deny += [42]' "$JSON" > "$dir/settings.json"
-  out=$(every_entry_has_valid_shape "$dir/settings.json")
+  jq '.permissions.deny += [42]' <<< '{"permissions":{"deny":["Read(.env)"]}}' > "$dir/settings.json"
+  out=$(malformed_entries "$dir/settings.json")
   assert_eq '[42]' "$out" "shape check should flag the non-string entry 42"
 }
 
 test_shape_check_rejects_a_single_leading_slash() {
   local dir out
   dir=$(tmpdir)
-  jq '.permissions.deny += ["Read(/.env)"]' "$JSON" > "$dir/settings.json"
-  out=$(every_entry_has_valid_shape "$dir/settings.json")
+  jq '.permissions.deny += ["Read(/.env)"]' <<< '{"permissions":{"deny":["Read(.env)"]}}' > "$dir/settings.json"
+  out=$(malformed_entries "$dir/settings.json")
   assert_eq '["Read(/.env)"]' "$out" "shape check should flag Read(/.env), which anchors at the settings source, not the filesystem root"
 }
 
