@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git stash *)",
+
+      "Bash(git push --force*)",
+      "Bash(git push * --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+
+      "Bash(rm -rf*)",
+      "Bash(rm -fr*)",
+      "Bash(rm -r -f*)",
+
+      "Bash(gh auth login *)",
+      "Bash(gh auth logout *)",
+      "Bash(gh auth refresh *)",
+      "Bash(gh auth token *)",
+      "Bash(gh auth switch *)",
+
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.aws/credentials)",
+      "Read(~/.ssh/**)",
+      "Read(~/.netrc)",
+
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(~/.config/gh/**)",
+      "Edit(~/.aws/credentials)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.netrc)"
+    ]
+  }
+}
