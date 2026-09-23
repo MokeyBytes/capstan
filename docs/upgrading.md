@@ -13,7 +13,7 @@ Leave the `/plugin` auto-update toggle off, the same as for any third-party mark
 
 The GitHub Projects v2 tracker surface is no longer part of core. It is a second plugin, `capstan-board`, installed and configured separately. See [tracker surface](tracker.md) for what it costs and how to install it.
 
-If your project's `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before running an effort or a quick on 3.0.0. If you upgrade core first and run one anyway, it stops rather than guessing which surface holds slice state. An effort stops before the interview; a quick stops when it first writes its tracker row, after the interview:
+If your project's `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before running an effort or a quick on 3.0.0. If you upgrade core first and run one anyway, it stops rather than guessing which surface holds slice state. An effort stops before its interview, and a quick after its interview:
 
 ```
 surface not installed: install capstan-board@bytesnation
@@ -40,6 +40,6 @@ claude plugin install capstan@bytesnation --scope user
 claude plugin install capstan-board@bytesnation --scope user  # if you use the board
 ```
 
-Use `--scope project` on the last command if that is where it was installed. `capstan@bytesnation` survives the round trip because a marketplace takes its name from the `name` field in its `marketplace.json` rather than from the repository path, so re-adding from a different address produces the same marketplace and the same plugin identifier.
+Use `--scope project` on each install command whose plugin was installed there. `capstan@bytesnation` survives the round trip because a marketplace takes its name from the `name` field in its `marketplace.json` rather than from the repository path, so re-adding from a different address produces the same marketplace and the same plugin identifier.
 
 The version cache under `~/.claude/plugins/cache/` is untouched throughout. A session open while you do this keeps resolving skills from the copy it already holds, and picks up the reinstall when you restart it.

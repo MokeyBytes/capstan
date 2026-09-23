@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # For every relative markdown link, reference-style link definition, and
 # #anchor under README.md, DESIGN.md, docs/, examples/, skills/, agents/,
-# plugins/, bench/, .capstan/ and CLAUDE.md: the target file (or directory)
-# exists, and any #anchor matches a heading in that target under an
-# ASCII-only slug rule (lowercase, keep a-z0-9_-, spaces to hyphens,
+# plugins/, bench/, .capstan/ and CLAUDE.md, except .capstan/decisions/archive,
+# .capstan/effort and .capstan/quick, which are never scanned: the target file
+# (or directory) exists, and any #anchor matches a heading in that target under
+# an ASCII-only slug rule (lowercase, keep a-z0-9_-, spaces to hyphens,
 # everything else dropped, duplicates suffixed -1, -2, ...), not GitHub's
 # fuller rule. Links inside fenced code blocks are sample text, not real
 # links, and are skipped on both sides.
@@ -14,9 +15,8 @@ SCAN_ROOTS=(README.md DESIGN.md docs skills agents examples plugins bench .capst
 
 # PRUNED_PATHS names paths, relative to a scan's own base, that find never
 # descends into: .capstan/decisions/archive is append-only and never
-# link-checked (a row moved there keeps its original, now-broken-looking
-# relative links, per row 948), and .capstan/effort and .capstan/quick are
-# gitignored scratch.
+# link-checked (a row moved there keeps its original, broken relative links,
+# per row 948), and .capstan/effort and .capstan/quick are gitignored scratch.
 PRUNED_PATHS=(.capstan/decisions/archive .capstan/effort .capstan/quick)
 
 # missing_scan_roots ROOT... prints, one per line, any root that does not
@@ -37,8 +37,13 @@ missing_scan_roots() {
 find_markdown_files() {
   local base="$1"
   shift
+  local prune_expr=() p
+  for p in "${PRUNED_PATHS[@]}"; do
+    [[ ${#prune_expr[@]} -gt 0 ]] && prune_expr+=(-o)
+    prune_expr+=(-path "$p")
+  done
   (cd "$base" && find "$@" \
-    \( -path "${PRUNED_PATHS[0]}" -o -path "${PRUNED_PATHS[1]}" -o -path "${PRUNED_PATHS[2]}" \) -prune \
+    \( "${prune_expr[@]}" \) -prune \
     -o -type f -name '*.md' -print | sort)
 }
 
@@ -134,6 +139,28 @@ check_link() {
   fi
 }
 
+# broken_links BASE ROOT... prints "<path>:<line>: <reason>" for every
+# broken link found scanning ROOT... under BASE, one per line, skipping
+# PRUNED_PATHS and external URLs. Shared by the real repo scan and every
+# test that scans a scratch tree, so a change to what counts as broken
+# changes once for all of them.
+broken_links() {
+  local base="$1"
+  shift
+  local f target lineno reason abs
+  while IFS= read -r f; do
+    abs="$base/$f"
+    while IFS=$'\t' read -r lineno target; do
+      [[ -z "$target" ]] && continue
+      case "$target" in
+        http://*|https://*|mailto:*) continue ;;
+      esac
+      reason="$(check_link "$abs" "$target")"
+      [[ -n "$reason" ]] && printf '%s:%s: %s\n' "$f" "$lineno" "$reason"
+    done < <(extract_links "$abs")
+  done < <(find_markdown_files "$base" "$@")
+}
+
 test_flags_a_missing_target_file() {
   local dir out
   dir=$(tmpdir)
@@ -221,13 +248,10 @@ test_a_reference_style_definition_inside_a_fenced_code_block_is_not_extracted() 
 }
 
 test_flags_a_broken_reference_style_link() {
-  local dir out target lineno
+  local dir out
   dir=$(tmpdir)
   printf '# Title\n\nSee [it][ref].\n\n[ref]: nope.md\n' > "$dir/a.md"
-  out=""
-  while IFS=$'\t' read -r lineno target; do
-    out="$out$(check_link "$dir/a.md" "$target")"
-  done < <(extract_links "$dir/a.md")
+  out=$(broken_links "$dir" a.md)
   assert_contains "$out" "missing target" "a reference-style link, extracted and then checked end to end, resolving to a missing file should be flagged"
 }
 
@@ -257,25 +281,13 @@ test_missing_scan_roots_reports_an_absent_root() {
 }
 
 test_repo_links_all_resolve() {
-  local broken="" f target lineno reason abs missing
+  local broken missing
   missing="$(missing_scan_roots "${SCAN_ROOTS[@]}")"
   if [[ -n "$missing" ]]; then
     fail "missing scan root(s): $(printf '%s' "$missing" | tr '\n' ' ')"
     return
   fi
-  while IFS= read -r f; do
-    abs="$REPO_ROOT/$f"
-    while IFS=$'\t' read -r lineno target; do
-      [[ -z "$target" ]] && continue
-      case "$target" in
-        http://*|https://*|mailto:*) continue ;;
-      esac
-      reason="$(check_link "$abs" "$target")"
-      if [[ -n "$reason" ]]; then
-        broken="${broken}${f}:${lineno}: ${reason}"$'\n'
-      fi
-    done < <(extract_links "$abs")
-  done < <(find_markdown_files "$REPO_ROOT" "${SCAN_ROOTS[@]}")
+  broken="$(broken_links "$REPO_ROOT" "${SCAN_ROOTS[@]}")"
   [[ -z "$broken" ]] || fail "$broken"
 }
 
@@ -284,25 +296,14 @@ test_repo_links_all_resolve() {
 # rows 14, 85 and 151 into decisions/archive/, and their relative links to
 # decisions/000N-*.md broke from that new location. This rotates a scratch
 # copy of the repository's own .capstan/, never the real one, and checks
-# that the scan the fixed test_repo_links_all_resolve runs stays green.
+# that the scan broken_links runs, the same function test_repo_links_all_resolve
+# calls, stays green.
 test_link_check_stays_green_after_a_decision_log_rotation() {
-  local dir broken="" f target lineno reason abs
+  local dir broken
   dir=$(tmpdir)
   cp -R "$REPO_ROOT/.capstan" "$dir/.capstan"
   "$BIN/capstan-log" rotate "$dir/.capstan" --force >/dev/null
-  while IFS= read -r f; do
-    abs="$dir/$f"
-    while IFS=$'\t' read -r lineno target; do
-      [[ -z "$target" ]] && continue
-      case "$target" in
-        http://*|https://*|mailto:*) continue ;;
-      esac
-      reason="$(check_link "$abs" "$target")"
-      if [[ -n "$reason" ]]; then
-        broken="${broken}${f}:${lineno}: ${reason}"$'\n'
-      fi
-    done < <(extract_links "$abs")
-  done < <(find_markdown_files "$dir" .capstan)
+  broken="$(broken_links "$dir" .capstan)"
   assert_eq "" "$broken" "the link check should stay green on a scratch .capstan/ after a rotation"
 }
 

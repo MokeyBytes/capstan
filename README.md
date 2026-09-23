@@ -31,7 +31,7 @@ Run `/capstan:setup` to choose where the glossary, decision log, decision record
 /capstan:effort add rate limiting to the public API
 ```
 
-You talk to the Architect throughout: it owns the interview, spec, slice graph and decision log, never builds or reviews.
+You talk to the Architect throughout. It owns the interview, spec, slice graph and decision log, and never builds or reviews.
 
 1. **It interviews you**, in rounds, each carrying a recommended answer.
 2. **Gate one locks the concept**: what, why, and what you are not building.
@@ -49,7 +49,7 @@ For anything smaller, `/capstan:quick` runs one slice through a single gate; see
 
 **The run ends at every gate.** That is what makes the gate real. `.capstan/effort/CLAIM.md` records where the effort got to, so the next session resumes there. A lock beside it refuses a second session on the same effort and names who holds it; only you decide to resume or take over.
 
-**Unclear requirements never stop the run.** The crew takes the most defensible reading, logs the assumption, and keeps going. It surfaces at the next gate, where correcting it costs almost nothing. Four things do stop it: secrets and credentials, anything a third party will see, anything that costs money, and anything destructive or production-facing. The one delete the crew makes on its own is the gitignored scratch, at delivery.
+**Unclear requirements never stop the run.** The crew takes the most defensible reading, logs the assumption, and keeps going. Every assumption surfaces at the next gate, where correcting one costs almost nothing. Four things do stop it: secrets and credentials, anything a third party will see, anything that costs money, and anything destructive or production-facing. The one delete the crew makes on its own is the gitignored scratch, at delivery.
 
 ## The disciplines
 
@@ -65,7 +65,7 @@ Three front doors, invoked only by you, none a discipline: [`effort`](skills/eff
 | [`codebase-design`](skills/codebase-design/SKILL.md) | Words for structure, so a review can call a module too shallow. |
 | [`two-axis-review`](skills/two-axis-review/SKILL.md) | Standards and spec, reviewed independently, never blended. |
 | [`verify`](skills/verify/SKILL.md) | Runs the checks your repository declares against the merged result. |
-| [`resolving-merge-conflicts`](skills/resolving-merge-conflicts/SKILL.md) | Integrating parallel Builders, where a conflict can't state its intent. |
+| [`resolving-merge-conflicts`](skills/resolving-merge-conflicts/SKILL.md) | Integrating parallel Builders, where neither Builder can be asked its intent. |
 | [`walkthrough`](skills/walkthrough/SKILL.md) | The one-time script for a manual procedure. |
 | [`decision-record`](skills/decision-record/SKILL.md) | A one-line log by default, a full record only when earned. |
 | [`brief`](skills/brief/SKILL.md) | Checkpoint and partner briefs, per recipient, never maintained. |
@@ -91,7 +91,7 @@ No dollar or token figure appears until `bench/` measures one. See [`bench/PROTO
 
 ## Upgrading to 3.0.0
 
-The GitHub tracker board moved out of core into its own plugin, `capstan-board`. If `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before your next effort or quick. An effort stops before the interview; a quick stops when it first writes its tracker row, after the interview: `surface not installed: install capstan-board@bytesnation`. A project that has never set `capstan-tracker` sees no change. See [upgrading](docs/upgrading.md) and [tracker surface](docs/tracker.md) for the rest.
+The GitHub tracker board moved out of core into its own plugin, `capstan-board`. If `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before your next effort or quick. Otherwise an effort stops before its interview, and a quick after its interview: `surface not installed: install capstan-board@bytesnation`. A project that has never set `capstan-tracker` sees no change. See [upgrading](docs/upgrading.md) and [tracker surface](docs/tracker.md) for the rest.
 
 ## Known limits
 
