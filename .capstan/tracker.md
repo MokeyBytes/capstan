@@ -10,7 +10,7 @@ capstan_type: tracker
 | code-standards | builder-standards | merged | 15dfa0d |
 | code-standards | comment-rule | merged | 4f00453 |
 | code-standards | declared-checks | merged | 243d4db |
-| external-review | bench | building | |
+| external-review | bench | merged | 4725c2a |
 | external-review | board | planned | |
 | external-review | deny | merged | 9c61880 |
 | external-review | log-helper | merged | 3e25155 |
