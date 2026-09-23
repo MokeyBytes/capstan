@@ -7,7 +7,7 @@ description: Record decisions so they survive without bloating anything. A one-l
 
 Three tiers, sorted by how long each thing needs to survive. Nearly everything stays in tier one.
 
-The log, the records and the glossary are durable artifacts, and each carries one frontmatter property, `capstan_type`, prefixed because Obsidian types a property vault-wide by its name, naming what the note is (`decision-log`, `decision-record`, or `glossary`). The tracker carries `capstan_type: tracker` where the surface is `tracker.md`; where it is a GitHub board it lives outside the document home and carries none. That is the whole schema, and it exists so a vault can tell a Capstan note from any other one sitting beside it. The `effort` skill's `## Tracker` section owns which surface applies and the count that follows from it.
+The log, the records, the archive and the glossary are durable artifacts, and each carries one frontmatter property, `capstan_type`, prefixed because Obsidian types a property vault-wide by its name, naming what the note is (`decision-log`, `decision-record`, `decision-archive`, or `glossary`). The tracker carries `capstan_type: tracker` where the surface is `tracker.md`; where it is a GitHub board it lives outside the document home and carries none. That is the whole schema, and it exists so a vault can tell a Capstan note from any other one sitting beside it. The `effort` skill's `## Tracker` section owns which surface applies and the count that follows from it.
 
 ## Tier 1: the log
 
@@ -29,9 +29,15 @@ capstan_type: decision-log
 | 5 | 2026-08-14 | Config lives in the database, not env vars | superseded by 9 |
 ```
 
-This is what an agent reads when it opens the repository cold, and what you scan six months later. It cannot bloat, because a line is a line.
+This is what an agent reads when it opens the repository cold, and what you scan six months later. It stays scannable in one pass because it stays one file: past a size threshold, `<bin>/capstan-log rotate <document home>` moves every row that is not `open`, `assumed` or `unformed`, other than the newest N, out to an append-only file under `decisions/archive/` in the document home, one file per rotation, named `decisions-<lo>-<hi>.md` for the lowest and highest row number it holds. `<bin>` is the helper folder beside `skills/effort/bin/`. Rotation runs in phase 4, per `PHASE-4-DELIVER.md`; nothing in an ordinary session triggers it.
 
 Write the line the moment the decision resolves, not batched at the end of a session. A decision that only exists in a context window is a decision that is about to be lost.
+
+### Reading past a rotation
+
+A rotated row still binds; it has just left the file scanned by default. Before trusting that a topic has never been decided, `grep -i` `decisions/archive/` in the document home for its area terms, the same way `effort/SKILL.md`'s "Before you start" does, and the way `two-axis-review` does before grading a standard the repository might have declined.
+
+Archive files are append-only. A row that lands there is never edited again, its status cell included — an archived row does not get its status flipped to reflect a later decision. Superseding an archived row instead opens a new row in the active log, in the ordinary way, starting `Supersedes NNN.`; the archived row keeps whatever status it already carried. A row's real standing — whether something later replaced it — is answered by grepping every file for that phrase with `<bin>/capstan-log find <document home> <NNN>`, never by looking at the row's own status cell once it is archived.
 
 ### What a line records
 
