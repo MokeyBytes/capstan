@@ -84,7 +84,7 @@ At the default, the crew commits it as ordinary unattended work, per the Authori
 
 Every frontmatter property Capstan writes carries a `capstan_` prefix. Obsidian types a property vault-wide by name, so a bare `status` collides with whatever the operator's vault already assigned that name.
 
-The decision log stays one file, `decisions.md`, wherever the document home points. It does not become one note per decision; the records in `decisions/` stay one note each.
+The active decision log stays one file, `decisions.md`, wherever the document home points, rotating rows out to `decisions/archive/` as it grows rather than growing without bound. It does not become one note per decision; the records in `decisions/` stay one note each.
 
 ### When no document home is configured
 
@@ -193,7 +193,7 @@ The lock is the only thing standing between two sessions and the same files. The
 
 Then check how many efforts are in flight. **Three is the ceiling.** Three gates each against one reader means nine briefs a cycle, which is the point where they stop being read and start being rubber-stamped. If three are already open, say so and ask which one to close first rather than starting a fourth.
 
-Then read what already exists: `CONTEXT.md`, `decisions.md`, and any prior `decisions/` records covering this area, all in the document home. Also read the effort's knowledge-base note if it has one. You are bound by decisions already made. If one of them is wrong, say so out loud rather than quietly designing around it.
+Then read what already exists: `CONTEXT.md`, `decisions.md` in full, and any prior `decisions/` records covering this area, all in the document home. Also `grep -ri` `decisions/archive/` in the document home for this effort's area terms: a rotated row still binds even though it no longer sits in `decisions.md`. Also read the effort's knowledge-base note if it has one. You are bound by decisions already made. If one of them is wrong, say so out loud rather than quietly designing around it.
 
 ## Every phase begins by re-reading the world
 
@@ -219,6 +219,8 @@ Verifying costs two commands. Building on a stale premise costs the whole phase.
 ## Before the first decision row
 
 Invoke the `decision-record` skill before this run's first row goes into `decisions.md` in the document home: a continuous duty has no moment of its own to attach to, so this section supplies one.
+
+Take the new row's number from `<bin>/capstan-log next <document home>` rather than counting rows by eye: after rotation the active log holds only the newest N rows plus whatever is still `open`, `assumed` or `unformed` — far fewer rows than the highest number in force — so counting them gives the wrong number, while `next` reads every file, the active log and every archive, under any `--keep`.
 
 ## Phase 1: Concept
 
@@ -277,8 +279,9 @@ Prepare the change and run it in check mode. Present the diff at gate three. Aft
 <document home>/          defaults to <working copy>/.capstan/. Committed automatically only at
                            the default; the operator commits a configured one, per Document home above.
   CONTEXT.md      one line per term. persists. edited in place.
-  decisions.md    one line per decision. persists.
+  decisions.md    one line per decision, open/assumed/unformed rows and the newest N. persists.
   decisions/      full records, only when gated. persists.
+    archive/      rotated rows, one append-only file per rotation. never edited.
   tracker.md      one row per slice. persists when the tracker is unset, absent under a GitHub surface. created on first write.
 
 <working copy>/
@@ -292,7 +295,7 @@ Prepare the change and run it in check mode. Present the diff at gate three. Aft
       review/       <slice>-<n>.md for a Reviewer's return, verify-<n>.md for a verify return
 
 <this skill>/
-  bin/              capstan-claim, capstan-scratch-clean, capstan-tracker. `--help` on each lists its commands and exit codes.
+  bin/              capstan-claim, capstan-scratch-clean, capstan-tracker, capstan-log. `--help` on each lists its commands and exit codes.
 ```
 
 This skill ensures `.gitignore` carries `.capstan/effort/`, replacing an older scratch line with it where one is already there. `setup` ensures the same line on its first run. The scratch never enters git history, which is what keeps repositories from accumulating stale planning material. The entry stays bare: a `.gitignore` line is relative to the repository root.
@@ -318,4 +321,4 @@ Reviewers check Builders by construction, and you check Reviewers and Couriers b
 
 No router agent, no scheduler, no cron sweep, no JSON schemas, no hooks. If a piece of this workflow starts wanting code to keep it alive, that is the signal to simplify it instead. Every line of code in an operating layer is a line that eventually gets maintained or abandoned.
 
-The three helpers in `bin/` are the bounded exception, per [0004](../../.capstan/decisions/0004-admit-a-thin-executable-layer.md). Each replaces a rule the decision log shows prose failing to hold, each does one deterministic thing, and each is tested in `tests/` and by CI. Judgement stays in these files; a helper only takes a lock, counts, enumerates, or deletes an exact path. A fourth earns its place the same way, with the failure it answers recorded in the log first.
+The four helpers in `bin/` are the bounded exception, per [0004](../../.capstan/decisions/0004-admit-a-thin-executable-layer.md). Each replaces a rule the decision log shows prose failing to hold, each does one deterministic thing, and each is tested in `tests/` and by CI. Judgement stays in these files; a helper only takes a lock, counts, enumerates, rotates, or deletes an exact path. A fifth earns its place the same way, with the failure it answers recorded in the log first.

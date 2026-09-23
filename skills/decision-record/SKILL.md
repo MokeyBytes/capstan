@@ -7,7 +7,7 @@ description: Record decisions so they survive without bloating anything. A one-l
 
 Three tiers, sorted by how long each thing needs to survive. Nearly everything stays in tier one.
 
-The log, the records and the glossary are durable artifacts, and each carries one frontmatter property, `capstan_type`, prefixed because Obsidian types a property vault-wide by its name, naming what the note is (`decision-log`, `decision-record`, or `glossary`). The tracker carries `capstan_type: tracker` where the surface is `tracker.md`; where it is a GitHub board it lives outside the document home and carries none. That is the whole schema, and it exists so a vault can tell a Capstan note from any other one sitting beside it. The `effort` skill's `## Tracker` section owns which surface applies and the count that follows from it.
+The log, the records, the archive and the glossary are durable artifacts, and each carries one frontmatter property, `capstan_type`, prefixed because Obsidian types a property vault-wide by its name, naming what the note is (`decision-log`, `decision-record`, `decision-archive`, or `glossary`). The tracker carries `capstan_type: tracker` where the surface is `tracker.md`; where it is a GitHub board it lives outside the document home and carries none. That is the whole schema, and it exists so a vault can tell a Capstan note from any other one sitting beside it. The `effort` skill's `## Tracker` section owns which surface applies and the count that follows from it.
 
 ## Tier 1: the log
 
@@ -29,9 +29,15 @@ capstan_type: decision-log
 | 5 | 2026-08-14 | Config lives in the database, not env vars | superseded by 9 |
 ```
 
-This is what an agent reads when it opens the repository cold, and what you scan six months later. It cannot bloat, because a line is a line.
+This is what an agent reads when it opens the repository cold, and what you scan six months later. It stays scannable in one pass because it stays one file: past a size threshold, `<bin>/capstan-log rotate <document home>` moves every row that is not `open`, `assumed` or `unformed`, other than the newest N, out to an append-only file under `decisions/archive/` in the document home, one file per rotation, named `decisions-<lo>-<hi>.md` for the lowest and highest row number it holds. `<bin>` is `skills/effort/bin/`, `../effort/bin/` from this skill's own base directory. Rotation runs in phase 4, per `PHASE-4-DELIVER.md`; nothing in an ordinary session triggers it.
 
 Write the line the moment the decision resolves, not batched at the end of a session. A decision that only exists in a context window is a decision that is about to be lost.
+
+### Reading past a rotation
+
+A rotated row still binds; it has just left the file scanned by default. Before trusting that a topic has never been decided, `grep -ri` `decisions/archive/` in the document home for its area terms, the same way `effort/SKILL.md`'s "Before you start" does, and the way `two-axis-review` does before grading a standard the repository might have declined.
+
+Archive files are append-only. A row that lands there is never edited again, its status cell included — an archived row does not get its status flipped to reflect a later decision. Superseding an archived row instead opens a new row in the active log, in the ordinary way, starting `Supersedes NNN.`; the archived row keeps whatever status it already carried. Whether an archived row still stands runs both directions. An archived status cell that already reads `superseded by NNN` is authoritative: trust it. Any other archived status may be stale, because the cell is frozen at whatever it said when the row was archived, so run `<bin>/capstan-log find <document home> <NNN>` and read each row it lists — `find` matches text, including a row that only quotes `Supersedes NNN` as an example, so a listed row is a candidate to confirm rather than a verdict.
 
 ### What a line records
 
@@ -110,7 +116,7 @@ Never stored. Generated per recipient at send time by the `brief` skill, which o
 
 ## Never edit an accepted record
 
-When a decision changes, write a new one that supersedes the old and cross-link both. Mark the old one `superseded by NNNN` and give the new one a `supersedes NNNN` line. Update both files, every time.
+When a decision changes, write a new one that supersedes the old and cross-link both. Mark the old one `superseded by NNNN` and give the new one a `supersedes NNNN` line. Update both files, every time — except a log row that has already been archived, which "Reading past a rotation" above covers instead.
 
 This is the mechanic that keeps the set honest. Editing an accepted record destroys the history of why the direction shifted, which is usually the most valuable thing in the folder.
 
