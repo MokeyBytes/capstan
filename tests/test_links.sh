@@ -12,6 +12,13 @@ source "$(dirname "$0")/lib.sh"
 
 SCAN_ROOTS=(README.md DESIGN.md docs skills agents examples plugins bench .capstan CLAUDE.md)
 
+# PRUNED_PATHS names paths, relative to a scan's own base, that find never
+# descends into: .capstan/decisions/archive is append-only and never
+# link-checked (a row moved there keeps its original, now-broken-looking
+# relative links, per row 948), and .capstan/effort and .capstan/quick are
+# gitignored scratch.
+PRUNED_PATHS=(.capstan/decisions/archive .capstan/effort .capstan/quick)
+
 # missing_scan_roots ROOT... prints, one per line, any root that does not
 # exist under REPO_ROOT. A renamed or deleted root should fail loudly
 # rather than scan silently less than it claims to.
@@ -22,9 +29,22 @@ missing_scan_roots() {
   done
 }
 
-# heading_slugs FILE prints one GitHub-style anchor slug per line, in
-# document order. ATX headings only; a line inside a fenced code block is
-# sample content, never a real heading.
+# find_markdown_files BASE ROOT... prints, one per line and relative to
+# BASE, every *.md file under each ROOT, in sorted order, skipping
+# PRUNED_PATHS. Used against REPO_ROOT for the real scan and against a
+# scratch copy of .capstan/ in tests below, so a rotation's effect on the
+# scan can be checked without touching the real .capstan.
+find_markdown_files() {
+  local base="$1"
+  shift
+  (cd "$base" && find "$@" \
+    \( -path "${PRUNED_PATHS[0]}" -o -path "${PRUNED_PATHS[1]}" -o -path "${PRUNED_PATHS[2]}" \) -prune \
+    -o -type f -name '*.md' -print | sort)
+}
+
+# heading_slugs FILE prints one anchor slug per line, under the ASCII-only
+# rule above, in document order. ATX headings only; a line inside a fenced
+# code block is sample content, never a real heading.
 heading_slugs() {
   awk '
     /^```/ { infence = !infence; next }
@@ -49,7 +69,10 @@ heading_slugs() {
 
 # extract_links FILE prints "<line>\t<target>" for every markdown link and
 # reference-style link definition outside a fenced code block, in document
-# order. Several links on one line each get their own output line.
+# order. Several links on one line each get their own output line. A
+# reference-style definition may carry up to three leading spaces, valid
+# CommonMark; a footnote definition (`[^1]: ...`) is not a reference-style
+# link definition and is skipped.
 extract_links() {
   awk '
     /^```/ { infence = !infence; next }
@@ -62,9 +85,9 @@ extract_links() {
         print FNR "\t" target
         line = substr(line, RSTART + RLENGTH)
       }
-      if (match($0, /^\[[^]]+\]:[ \t]*[^ \t]+/)) {
+      if (match($0, /^[ ]?[ ]?[ ]?\[[^]^][^]]*\]:[ \t]*[^ \t]+/)) {
         seg = substr($0, RSTART, RLENGTH)
-        sub(/^\[[^]]+\]:[ \t]*/, "", seg)
+        sub(/^[ ]?[ ]?[ ]?\[[^]^][^]]*\]:[ \t]*/, "", seg)
         print FNR "\t" seg
       }
     }
@@ -198,11 +221,30 @@ test_a_reference_style_definition_inside_a_fenced_code_block_is_not_extracted() 
 }
 
 test_flags_a_broken_reference_style_link() {
-  local dir out
+  local dir out target lineno
   dir=$(tmpdir)
   printf '# Title\n\nSee [it][ref].\n\n[ref]: nope.md\n' > "$dir/a.md"
-  out=$(check_link "$dir/a.md" "nope.md")
-  assert_contains "$out" "missing target" "a reference-style link resolving to a missing file should be flagged"
+  out=""
+  while IFS=$'\t' read -r lineno target; do
+    out="$out$(check_link "$dir/a.md" "$target")"
+  done < <(extract_links "$dir/a.md")
+  assert_contains "$out" "missing target" "a reference-style link, extracted and then checked end to end, resolving to a missing file should be flagged"
+}
+
+test_a_footnote_definition_is_not_extracted_as_a_reference_style_link() {
+  local dir out
+  dir=$(tmpdir)
+  printf '# Title\n\nSee it.[^1]\n\n[^1]: Source text here.\n' > "$dir/a.md"
+  out=$(extract_links "$dir/a.md")
+  assert_eq "" "$out" "a footnote definition is not a reference-style link definition and should not be extracted"
+}
+
+test_a_reference_style_definition_indented_up_to_three_spaces_is_extracted() {
+  local dir out
+  dir=$(tmpdir)
+  printf '# Title\n\nSee [it][ref].\n\n   [ref]: nope.md\n' > "$dir/a.md"
+  out=$(extract_links "$dir/a.md")
+  assert_contains "$out" "nope.md" "a reference-style definition indented up to three spaces is valid CommonMark and should still be extracted"
 }
 
 test_missing_scan_roots_reports_an_absent_root() {
@@ -233,8 +275,35 @@ test_repo_links_all_resolve() {
         broken="${broken}${f}:${lineno}: ${reason}"$'\n'
       fi
     done < <(extract_links "$abs")
-  done < <(cd "$REPO_ROOT" && find "${SCAN_ROOTS[@]}" -type f -name '*.md' | sort)
+  done < <(find_markdown_files "$REPO_ROOT" "${SCAN_ROOTS[@]}")
   [[ -z "$broken" ]] || fail "$broken"
+}
+
+# test_link_check_stays_green_after_a_decision_log_rotation guards SP1
+# (row 948): before the prune above, rotating .capstan/decisions.md moved
+# rows 14, 85 and 151 into decisions/archive/, and their relative links to
+# decisions/000N-*.md broke from that new location. This rotates a scratch
+# copy of the repository's own .capstan/, never the real one, and checks
+# that the scan the fixed test_repo_links_all_resolve runs stays green.
+test_link_check_stays_green_after_a_decision_log_rotation() {
+  local dir broken="" f target lineno reason abs
+  dir=$(tmpdir)
+  cp -R "$REPO_ROOT/.capstan" "$dir/.capstan"
+  "$BIN/capstan-log" rotate "$dir/.capstan" --force >/dev/null
+  while IFS= read -r f; do
+    abs="$dir/$f"
+    while IFS=$'\t' read -r lineno target; do
+      [[ -z "$target" ]] && continue
+      case "$target" in
+        http://*|https://*|mailto:*) continue ;;
+      esac
+      reason="$(check_link "$abs" "$target")"
+      if [[ -n "$reason" ]]; then
+        broken="${broken}${f}:${lineno}: ${reason}"$'\n'
+      fi
+    done < <(extract_links "$abs")
+  done < <(find_markdown_files "$dir" .capstan)
+  assert_eq "" "$broken" "the link check should stay green on a scratch .capstan/ after a rotation"
 }
 
 run_tests

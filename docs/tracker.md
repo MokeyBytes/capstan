@@ -12,7 +12,7 @@ The board is a second plugin, `capstan-board`, not part of core:
 claude plugin install capstan-board@bytesnation
 ```
 
-Restart Claude Code, then run `/capstan-board:setup` in the repository. It asks for the GitHub project number, checks the token can reach Projects v2, and hands you to a walkthrough for `gh auth refresh -s project` if it can't. When a `tracker.md` already holds rows, it writes `capstan-tracker` once you approve the migration; with no `tracker.md` yet, it writes the key straight away.
+Restart Claude Code, then run `/capstan-board:setup` in the repository. It asks for the GitHub project number, checks the token can reach Projects v2, and hands you to a walkthrough for `gh auth refresh -s project` if it can't. When a `tracker.md` exists, it writes `capstan-tracker` once you approve the migration; with no `tracker.md` yet, it writes the key straight away.
 
 `capstan-board` is a plugin-install-only feature. There is no manual-install form: the board's `setup` skill, copied under `~/.claude/skills/`, would collide with core's `setup`, and there is no `capstan-board@bytesnation` namespace to invoke without the plugin. See [manual install](manual-install.md) for what a manual install does carry.
 

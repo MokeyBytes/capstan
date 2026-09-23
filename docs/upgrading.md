@@ -13,7 +13,7 @@ Leave the `/plugin` auto-update toggle off, the same as for any third-party mark
 
 The GitHub Projects v2 tracker surface is no longer part of core. It is a second plugin, `capstan-board`, installed and configured separately. See [tracker surface](tracker.md) for what it costs and how to install it.
 
-If your project's `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before running an effort or a quick on 3.0.0. If you upgrade core first and run one anyway, it stops before the interview rather than guessing which surface holds slice state:
+If your project's `capstan-tracker` already names a GitHub project, install `capstan-board@bytesnation` before running an effort or a quick on 3.0.0. If you upgrade core first and run one anyway, it stops rather than guessing which surface holds slice state. An effort stops before the interview; a quick stops when it first writes its tracker row, after the interview:
 
 ```
 surface not installed: install capstan-board@bytesnation
@@ -31,12 +31,13 @@ claude plugin update capstan-board@bytesnation
 
 No command edits a marketplace's source in place, and editing `~/.claude/plugins/known_marketplaces.json` by hand does not hold, because the next `claude plugin marketplace update` puts the old address back. Removing and re-adding is the route that sticks.
 
-**Removing a marketplace uninstalls every plugin installed from it.** The install record empties and the marketplace clone is deleted, so the second and third commands here are the repair rather than tidying afterwards. Run the first alone and you have no Capstan:
+**Removing a marketplace uninstalls every plugin installed from it.** The install record empties and the marketplace clone is deleted, so the second, third and fourth commands here are the repair rather than tidying afterwards. Run the first alone and you have no Capstan:
 
 ```bash
 claude plugin marketplace remove bytesnation
 claude plugin marketplace add MokeyBytes/capstan
 claude plugin install capstan@bytesnation --scope user
+claude plugin install capstan-board@bytesnation --scope user  # if you use the board
 ```
 
 Use `--scope project` on the last command if that is where it was installed. `capstan@bytesnation` survives the round trip because a marketplace takes its name from the `name` field in its `marketplace.json` rather than from the repository path, so re-adding from a different address produces the same marketplace and the same plugin identifier.
