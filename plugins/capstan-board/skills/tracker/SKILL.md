@@ -1,6 +1,13 @@
+---
+name: tracker
+description: Read or write Capstan's slice tracker on a GitHub Projects v2 board, when a project's capstan-tracker key names one.
+---
+
 # Tracker: GitHub surface
 
-The visibility gate that decides whether a write needs the operator's confirmation lives in the Authority table in `SKILL.md`, and only there. Read it before writing anything to this surface.
+The helpers this skill runs live in `bin/` beside this file. Resolve that folder to an absolute path from wherever this skill was loaded — `${CLAUDE_PLUGIN_ROOT}/skills/tracker/bin` under a plugin install, `bin/` beside this file under a manual one — and call it `<bin>` below. This plugin cannot read core's files, so it never resolves `<bin>` against `capstan`'s own `bin/`.
+
+The visibility gate that decides whether a write needs the operator's confirmation lives in the Authority table in core's `effort` skill, and only there. Read it before writing anything to this surface.
 
 ## The column mapping
 
@@ -137,7 +144,7 @@ Read the board through the helper, never through a bare `gh project item-list`:
 <bin>/capstan-tracker read --owner <owner> --repo <repo> --project <project-number> [--with-commits]
 ```
 
-`<bin>` is the `bin/` folder beside `SKILL.md`. It prints one tab-separated row per slice — `effort`, `slice`, `status`, `commit`, `issue`, `url`, `note` — under a header line, a summary on stderr, and it exits 0 only for a read it can prove complete. `gh project item-list` returns 30 items unless told otherwise and paginates only up to the limit it is given, so the helper reads with an explicit limit, compares what came back against the `totalCount` the same response carries, and reads again with that count when the two differ. A row belongs to this tracker only when it is an issue in `<owner>/<repo>` carrying a `Capstan Status`; everything else on the board is counted in the summary and left out, per 730.
+It prints one tab-separated row per slice — `effort`, `slice`, `status`, `commit`, `issue`, `url`, `note` — under a header line, a summary on stderr, and it exits 0 only for a read it can prove complete. `gh project item-list` returns 30 items unless told otherwise and paginates only up to the limit it is given, so the helper reads with an explicit limit, compares what came back against the `totalCount` the same response carries, and reads again with that count when the two differ. A row belongs to this tracker only when it is an issue in `<owner>/<repo>` carrying a `Capstan Status`; everything else on the board is counted in the summary and left out, per 730.
 
 | Exit | Means |
 |---|---|
@@ -150,7 +157,7 @@ Read the board through the helper, never through a bare `gh project item-list`:
 
 Underneath, the helper runs `gh project item-list <project-number> --owner <owner> --format json --limit <n>` with a `--jq` projection. `--format json` is what puts the milestone and the custom field on the item at all, and in that JSON the field is keyed `capstan Status`, not `Capstan Status`: GitHub lowercases only the first word of a custom field's name when it renders it, leaving the option values untouched. Querying the display name exits zero and returns nothing against a field that is set, which is the trap the helper exists to keep out of an agent's hands.
 
-`diff` compares the board against a `tracker.md`, keyed by effort **and** slice, never slice alone: two efforts can each have a `docs`. It exits 0 only when both hold the same keys with the same status, and the same commit on `merged` rows, and otherwise prints every difference — `status-changed`, `commit-changed`, `board-only`, `file-only` — and exits 4. `skills/setup/SKILL.md` runs it before either migration leg deletes or tears anything down.
+`diff` compares the board against a `tracker.md`, keyed by effort **and** slice, never slice alone: two efforts can each have a `docs`. It exits 0 only when both hold the same keys with the same status, and the same commit on `merged` rows, and otherwise prints every difference — `status-changed`, `commit-changed`, `board-only`, `file-only` — and exits 4. this plugin's own `setup` skill runs it before either migration leg deletes or tears anything down.
 
 ## Why never the built-in `Status`
 
@@ -166,7 +173,7 @@ GitHub unreachable stops the run and says so. No retry, no backoff, no bounded w
 
 The discriminator is the exit status, never the message, and it reaches every read against this surface. Through the helper that is one code to read: exit 1 is unreachable, whichever of its calls failed, the per-issue comment reads included, which fire once per merged row and are easy to undercount by hand. Exit 2, incomplete, stops the run the same way: a partial read is neither empty nor unreachable, and treating it as either drops rows while reporting success, per 828.
 
-A nonzero exit from a write, or from any `gh` call made outside the helper, is unreachable, with one exception: `skills/setup/SKILL.md`'s scope-probe branch already names the missing-`project`-scope failure and walks the operator through the grant rather than stopping here. Every other nonzero exit, at that probe and everywhere else on this surface, is unreachable.
+A nonzero exit from a write, or from any `gh` call made outside the helper, is unreachable, with one exception: this plugin's own `setup` skill's scope-probe branch already names the missing-`project`-scope failure and walks the operator through the grant rather than stopping here. Every other nonzero exit, at that probe and everywhere else on this surface, is unreachable.
 
 A zero exit from the helper is a genuine empty result, not a failure: it has already proved the read complete and queried the field under the key the JSON actually carries. "Returns nothing" means no rows from it, which is already narrowed to rows whose value came back set.
 
