@@ -12,6 +12,7 @@ The words this repository uses, defined once. This describes Capstan itself; it 
 | Gate | A point where the run *ends* and the operator decides. Three per effort. Never a pause. |
 | Operator | The person at the gates. Never the crew, and never an agent. |
 | Crew | The five roles: Architect, Scout, Builder, Reviewer, Courier. |
+| Seat | One crew role as a unit of model and effort configuration: Builder, Reviewer, Scout or Courier. What `agent-models` proposes values for. |
 | Architect | Owns the interview, the spec, the slice graph, the decision log and the tracker. Your session, not a subagent. |
 | Scout | Read-only reconnaissance. Returns cited findings and never decides. |
 | Builder | Builds exactly one slice in its own worktree. Never reviews its own work. |
