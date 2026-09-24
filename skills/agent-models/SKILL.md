@@ -104,7 +104,7 @@ Close with:
 - Outside Capstan's own repository, every seat named in the yes carries `capstan-<role>.md` whose body opens with the marker and whose frontmatter differs from the installed file only in `name`, `model` and `effort`;
 - every Codex override written parses as TOML and opens with the marker comment;
 - In Capstan's own repository, each changed seat's `agents/<role>.md` frontmatter, README's "What this costs" and DESIGN's role table state the approved values, and no `agents/<role>.md` carries the marker;
-- the decision row is written, or the close states that the resolved document home has no `decisions.md` to write it into;
+- the decision row is written, or the close states which of the two no-row cases applied: The ask would reject the key, or the resolved document home has no `decisions.md`;
 - the close carries the Architect-session line, and the fresh-session line wherever an Agent override was written.
 
 ## What this run refuses
