@@ -28,7 +28,7 @@ Installed as a plugin these carry its prefix, so the Builder is `capstan:builder
 
 Spawning then only chooses the form: a role with a marked, loaded override spawns as `capstan-<role>`; every other role spawns as the form above.
 
-Under a manual install, a `.claude/agents/<role>.md` in the folder this session started in replaces the user-level agent whatever its first line says, because Claude Code ranks a project agent above a user one. Report an unmarked one before spawning rather than ignoring it.
+Under a manual install, a `.claude/agents/<role>.md` in the folder this session started in replaces the user-level agent, because Claude Code ranks a project agent above a user one. Report it before spawning rather than ignoring it.
 
 This holds in every phase.
 
