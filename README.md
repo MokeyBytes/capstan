@@ -53,7 +53,7 @@ For anything smaller, `/capstan:quick` runs one slice through a single gate; see
 
 ## The disciplines
 
-Three front doors, invoked only by you, none a discipline: [`effort`](skills/effort/SKILL.md) starts a full run, [`quick`](skills/quick/SKILL.md) runs one slice through a single gate, [`setup`](skills/setup/SKILL.md) configures where the artifacts live. Installing `capstan-board` adds a fourth, `/capstan-board:setup`, for the tracker surface.
+Four front doors, invoked only by you, none a discipline: [`effort`](skills/effort/SKILL.md) starts a full run, [`quick`](skills/quick/SKILL.md) runs one slice through a single gate, [`setup`](skills/setup/SKILL.md) configures where the artifacts live, and [`agent-models`](skills/agent-models/SKILL.md) tunes the crew's model and effort for Claude and Codex. Installing `capstan-board` adds a fifth, `/capstan-board:setup`, for the tracker surface.
 
 | Skill | For |
 |---|---|
@@ -81,7 +81,7 @@ A real brief goes here once `bench/` produces one. Nothing here is invented; see
 
 ## What this costs
 
-Models and effort come from each agent's frontmatter in `agents/*.md`: Builder runs `sonnet`/`high`, up to `capstan-max-builders` (3) at once. Reviewer runs `opus`/`xhigh`, once per slice and again per fix dispatch, up to `capstan-max-fix-dispatches` (5), plus once more on the knowledge-base note when configured. Scout and Courier both run `sonnet`/`medium`; the Architect is your own session, not a subagent.
+Models and effort come from each agent's frontmatter in `agents/*.md`: Builder runs `opus`/`high`, up to `capstan-max-builders` (3) at once. Reviewer runs `opus`/`xhigh`, once per slice and again per fix dispatch, up to `capstan-max-fix-dispatches` (5), plus once more on the knowledge-base note when configured. Scout and Courier both run `sonnet`/`medium`; the Architect is your own session, not a subagent. Run [`agent-models`](skills/agent-models/SKILL.md) to retune these when a new model ships.
 
 What scales the bill: slices cut, fix dispatches per slice, and Scouts fired. A one-slice `quick` run costs one Builder and one Reviewer, plus up to two fix dispatches, each reviewed by a fresh Reviewer.
 

@@ -12,7 +12,7 @@ Roles are functions in a pipeline, not domains, so the same five handle a softwa
 |---|---|---|---|
 | **Scout** | sonnet / medium | Finding out. Primary sources, cited findings. Runs many in parallel. | Decides anything. Has no write tools at all. |
 | **Architect** | your session | The interview, the spec, the slice graph, the decision log. | Builds or reviews. |
-| **Builder** | sonnet / high | One vertical slice, test-first, in its own worktree. | Reviews itself. Touches a gated action. |
+| **Builder** | opus / high | One vertical slice, test-first, in its own worktree. | Reviews itself. Touches a gated action. |
 | **Reviewer** | opus / xhigh | Independent two-axis review of the diff. | Sees the Builder's reasoning. Fixes what it finds. |
 | **Courier** | sonnet / medium | Packaging, recipient-specific briefs, the permanent record. | Sends anything. Commits the record. |
 
@@ -38,7 +38,7 @@ What does stop the line: secrets and credentials, anything a third party will se
 
 ## The disciplines
 
-The disciplines the roles pull in. Three front doors sit outside this table and are not disciplines: `effort` starts a full run, `quick` runs one slice through a single gate, and `setup` configures where the artifacts live. Only the operator invokes any of them. Three agents preload the disciplines they need via `skills:` frontmatter, so the discipline is in context before the first turn rather than hopefully invoked.
+The disciplines the roles pull in. Four front doors sit outside this table and are not disciplines: `effort` starts a full run, `quick` runs one slice through a single gate, `setup` configures where the artifacts live, and [`agent-models`](skills/agent-models/SKILL.md) tunes the crew's model and effort for Claude and Codex. Only the operator invokes any of them. Three agents preload the disciplines they need via `skills:` frontmatter, so the discipline is in context before the first turn rather than hopefully invoked.
 
 | Skill | Used by | For |
 |---|---|---|
