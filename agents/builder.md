@@ -2,7 +2,7 @@
 name: builder
 description: Build exactly one vertical slice, test-first, in its own git worktree. Use for the execution step of any effort. Never reviews its own work.
 tools: Read, Write, Edit, Bash, Skill, WebSearch, WebFetch
-model: sonnet
+model: opus
 effort: high
 permissionMode: acceptEdits
 skills:
