@@ -24,6 +24,14 @@ You are also the only role that talks to the operator between gates. Everything 
 
 Installed as a plugin these carry its prefix, so the Builder is `capstan:builder`. Spawn whichever form your install produced.
 
+**Once per run, before anything is taken**, check every role under a plugin install: where `<working copy>/.claude/agents/capstan-<role>.md` exists, its frontmatter names `capstan-<role>`, and its first body line is the marker `<!-- capstan-override: capstan@<version> agents/<role>.md -->` — an Agent override, written only by `agent-models` — the session must have started in the working copy, and `capstan-<role>` must be among the agents it lists as available. If either is not true, stop: report that the override exists but this session has not loaded it, and that a new session, started in the working copy after the override was written, loads it, rather than falling back silently.
+
+Spawning then only chooses the form: a role with a marked, loaded override spawns as `capstan-<role>`; every other role spawns as the form above.
+
+Under a manual install, a `.claude/agents/<role>.md` in the folder this session started in replaces the user-level agent, because Claude Code ranks a project agent above a user one. Report it before spawning rather than ignoring it.
+
+This holds in every phase.
+
 ## Three gates
 
 The run **stops** at each gate. Post the brief, then end your turn.
@@ -50,7 +58,7 @@ git -C <abs-path> rev-parse --show-toplevel
 
 Everything below refers to that path. **It is not necessarily the session's working directory and you must never assume it is.** A session can be rooted anywhere, including somewhere with no repository at all, and that is fine. Address the work by absolute path and the session's own location stops mattering.
 
-Never `cd` and never ask for a session to be restarted elsewhere. `git -C <path>` and absolute paths do everything a different working directory would.
+Never `cd`, and never ask for a session to be restarted elsewhere except to load an Agent override, per [the crew](#the-crew). For everything else, `git -C <path>` and absolute paths do what a different working directory would.
 
 If the work has no repository, say so and ask whether to create one. An effort needs a repository because slices are branches, and, under the default document home, because the decision log is committed there too.
 
@@ -140,7 +148,7 @@ Two more keys, read from the same two files as the three above, bare lines, chec
 
 ## Before you start
 
-Check the tracker before anything else, so a stop here leaves no lock: if `capstan-tracker` names a GitHub surface and `capstan-board:tracker` is not among the skills this session lists as available, stop as `## Tracker` above says.
+Check the tracker before anything else, so a stop here leaves no lock: if `capstan-tracker` names a GitHub surface and `capstan-board:tracker` is not among the skills this session lists as available, stop as `## Tracker` above says. Run [the crew section](#the-crew)'s override check here too, before **Take the claim** below.
 
 **Take the claim.** The helpers this skill runs live in `bin/` beside this file. Resolve that folder to an absolute path from wherever this skill was loaded, and call it `<bin>` below; every phase file uses the same name. Nothing about the claim is checked and then written by hand: one command takes the lock, and it either succeeds for you or says who holds it.
 
@@ -201,7 +209,7 @@ Then read what already exists: `CONTEXT.md`, `decisions.md` in full, and any pri
 
 A run **ends** at each gate, and time passes before the next one starts. Hours, sometimes. The repository moves, other sessions run, and the state you reasoned about is no longer the state in front of you.
 
-So the first act of phases 2, 3 and 4 is not the work. It is resuming the claim with the owner id the last run recorded, reading its `next`, which is the last run telling you where it stopped, and then checking what changed underneath it:
+So the first act of phases 2, 3 and 4 is not the work. Run [the crew section](#the-crew)'s override check first, ahead of the `acquire` below. Then resume the claim with the owner id the last run recorded, reading its `next`, which is the last run telling you where it stopped, and check what changed underneath it:
 
 ```bash
 <bin>/capstan-claim acquire <working copy> --owner <id>

@@ -7,7 +7,7 @@ argument-hint: "what you want built, fixed, or produced — small enough for one
 
 # Quick
 
-`/capstan:quick` is a third front door beside `effort` and `setup`: one gate, one slice, no Courier. A full effort's claim, slice graph, knowledge-base note and log rotation have no use here — there is only ever one slice. A quick is two runs: the first ends at the gate, the second resumes past it to a close.
+`/capstan:quick` is one of four front doors, beside `effort`, `setup` and `agent-models`. One gate, one slice, no Courier. A full effort's claim, slice graph, knowledge-base note and log rotation have no use here — there is only ever one slice. A quick is two runs: the first ends at the gate, the second resumes past it to a close.
 
 Read [`effort/SKILL.md`](../effort/SKILL.md) for the sections this flow points into rather than restates: [Precondition](../effort/SKILL.md#precondition-name-the-working-copy), [Document home](../effort/SKILL.md#document-home), [Before the first decision row](../effort/SKILL.md#before-the-first-decision-row), [Tracker](../effort/SKILL.md#tracker), [Files](../effort/SKILL.md#files), [Authority](../effort/SKILL.md#authority), and [Duties you owe](../effort/SKILL.md#duties-you-owe). Establish the working copy and the document home exactly as written there before anything else. This file only ever adds to what those sections say.
 
@@ -42,7 +42,7 @@ It keys on its leading word: `resume` (or a bare invocation with one quick parke
 2. **Escalate before writing the concept.** More than one slice of work, or anything [Authority](../effort/SKILL.md#authority) gates, stops here before the concept or a gate. Record the reason per `decision-record`, report it, and recommend `/capstan:effort`: this needs the phases and crew a quick run lacks.
 3. **Write the concept.** A short slug, checked against every existing row, `quick/` branch and folder, in `plan.md`'s slice-naming style. One file, `<working copy>/.capstan/quick/<slug>/concept.md` — gitignored, repo-relative, never resolved against the document home. First line the slug, second the commit `HEAD` names now, re-read at resume, third, blank until step 5 fills it. Then: what is built and why, what is not, what shows it is done, and the Builder's seam. The only planning document a quick produces — no graph needed for one slice, so no `plan.md`.
 4. **Post the gate and stop.** One gate, per `brief`'s gate-1 shape, naming the slug and printing the resume and discard forms verbatim. Write the Tracker row: effort and slice both the slug, status `planned`. Post it, then end the turn, per [Three gates](../effort/SKILL.md#three-gates).
-5. **On resume, re-read, then create the worktree.** `<gate commit>` is `concept.md`'s second line.
+5. **On resume, check the crew section's override, then re-read, then create the worktree.** Run [the crew section](../effort/SKILL.md#the-crew)'s override check first, before the row moves to `building` or the worktree is created: a stop there leaves the quick `planned`, the same exit a step-5 conflict below already takes, so `/capstan:quick resume` from a new session picks it up. `<gate commit>` is `concept.md`'s second line.
 
    ```bash
    git -C <working copy> log --oneline <gate commit>..HEAD
@@ -56,8 +56,8 @@ It keys on its leading word: `resume` (or a bare invocation with one quick parke
    ```
 
    Something that already does the concept's work, or conflicts with it: stop instead, printing the resume and discard forms and reporting what moved. The quick stays `planned`; a later `resume` proceeds once its answer accepts what moved.
-6. **Dispatch one Builder.** Spawn `capstan:builder` (plugin) or `builder` (manual), handing it by absolute path: the working copy, its worktree, the document home, and `concept.md` from the main working copy — never from inside the worktree, which lacks gitignored scratch. Every dispatch in this run reads the spec side only from `concept.md`: no `plan.md`, and any `.capstan/effort/` beside this quick belongs to a different effort, unread. Test-first, per `test-first`, against the concept's seam.
-7. **Dispatch one Reviewer.** Never the Builder instance. Spawn `capstan:reviewer` (plugin) or `reviewer` (manual). Hand it, by absolute path: the diff — branch against the commit step 5 branched from — the concept file, and the document home. Two-axis, per `two-axis-review`.
+6. **Dispatch one Builder.** Spawn the Builder in the form [the crew section](../effort/SKILL.md#the-crew) gives: your install's own name, or an Agent override. Hand it, by absolute path: the working copy, its worktree, the document home, and `concept.md` from the main working copy — never from inside the worktree, which lacks gitignored scratch. Every dispatch in this run reads the spec side only from `concept.md`: no `plan.md`, and any `.capstan/effort/` beside this quick belongs to a different effort, unread. Test-first, per `test-first`, against the concept's seam.
+7. **Dispatch one Reviewer.** Spawn the Reviewer the same way. Never the Builder instance. Hand it, by absolute path: the diff — branch against the commit step 5 branched from — the concept file, and the document home. Two-axis, per `two-axis-review`.
 8. **At most 2 fix dispatches.** A blocking or worth-doing finding is a new Builder task on the same branch, never to the Reviewer that found it or the Builder that built it. Every fix return goes to a fresh Reviewer, the same two-axis pass, and every finding is actioned or dismissed with its reason in `decisions.md`, per `decision-record`. A finding still open after the second dispatch stops the run, per **Stopping before merge**.
 9. **Merge, move the row, then remove the worktree.**
 
