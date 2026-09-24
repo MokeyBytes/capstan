@@ -56,13 +56,13 @@ Apply these standing rules to every row:
 
 Beside the tables, flag any Agent override or Codex override read above whose marker names a plugin version other than the one just resolved: it was copied from an older install and its body may already have drifted from what ships today.
 
-**End the run here, at the gate.** Post both tables, the drift flags and every unmarked file named above. Outside Capstan's own repository, say that a Builder override applies `permissionMode: acceptEdits`, which the plugin Builder does not. Then ask the operator to answer yes, naming which seats get a Claude override, not necessarily every seat the table changed, and any unmarked Codex file named above that they want replaced. In Capstan's own repository, ask for a yes to the table's proposed changes as they stand. Write nothing below this line until that yes arrives; the yes starts the second run.
+**End the run here, at the gate.** Post both tables, the drift flags and every unmarked file named above, saying of each unmarked Claude file that naming its seat replaces it. Outside Capstan's own repository, say that a Builder override applies `permissionMode: acceptEdits`, which the plugin Builder does not. Then, outside Capstan's own repository, ask the operator to answer yes, naming which seats get a Claude override, not necessarily every seat the table changed, and any unmarked Codex file named above that they want replaced. In Capstan's own repository, ask for a yes to the Claude table's proposed changes as they stand. Write nothing below this line until that yes arrives; the yes starts the second run.
 
 ## On yes
 
 Run every recheck that Propose asks for first, before any write.
 
-**Capstan's own repository.** Edit only the frontmatter of `agents/<role>.md` for every seat the table changed, and the same values in `README.md`'s "What this costs" section and in `DESIGN.md`'s role table. Nothing else changes, and no Codex override is ever written or committed here.
+**Capstan's own repository.** Edit only the frontmatter of `agents/<role>.md` for every seat the Claude table changed, and the same values in `README.md`'s "What this costs" section and in `DESIGN.md`'s role table. Nothing else changes, and no Codex override is ever written or committed here.
 
 **Any other project.** For each seat the operator named in the yes, write `<working copy>/.claude/agents/capstan-<role>.md`. The gate named any unmarked file at that path, so naming the seat is consent to replace it. The write is a copy of the whole installed plugin file, frontmatter and body together, with only its `name`, `model` and `effort` lines changed — `name` becomes `capstan-<role>` — plus this line first in the body, immediately after the closing `---` of the frontmatter:
 
@@ -70,7 +70,7 @@ Run every recheck that Propose asks for first, before any write.
 <!-- capstan-override: capstan@<plugin version> agents/<role>.md -->
 ```
 
-For all four seats, regardless of which got a Claude override, and unless Propose already flagged a Codex format mismatch, write `<working copy>/.codex/agents/capstan-<role>.toml` under the same consent rule as above — an unmarked Codex file is replaced only where the yes names that file — its own marker as the file's first line:
+For all four seats, regardless of which got a Claude override, and unless Propose already flagged a Codex format mismatch, write `<working copy>/.codex/agents/capstan-<role>.toml` where that path is absent, already marked, or holds an unmarked file the yes named by path, its own marker as the file's first line:
 
 ```toml
 # capstan-override: capstan@<plugin version> agents/<role>.md
@@ -89,14 +89,14 @@ Scout's and Reviewer's files additionally carry `sandbox_mode = "read-only"`.
 
 ## Record and recommend
 
-Resolve `<document home>` exactly as [`setup`'s "The ask"](../setup/SKILL.md#the-ask) resolves `capstan-document-home`. Where `decisions.md` does not already exist there, write no row, and say so in the close below.
+Resolve `<document home>` exactly as [`setup`'s "The ask"](../setup/SKILL.md#the-ask) resolves `capstan-document-home`, as far as the home currently in force. Where The ask would reject the key, or `decisions.md` does not already exist there, write no row, and say which in the close below.
 
 Where it does exist, invoke `decision-record`, take the row's number from `capstan-log next <document home>` at `../effort/bin/` from this skill's own base directory, and write one row naming what changed and why: each seat's old and new values, the files written, and the URL behind each change.
 
 Close with:
 
 - one line recommending a model and effort for the Architect's own session — never written into any file, since no frontmatter governs a session, only a subagent;
-- where any override was written, tell the operator to start a fresh session rooted in the working copy before the next `effort` or `quick` runs there: the crew spawns an override as `capstan-<role>` only once the session has loaded it;
+- where any Agent override was written, tell the operator to start a fresh session rooted in the working copy before the next `effort` or `quick` runs there: the crew spawns an override as `capstan-<role>` only once the session has loaded it;
 - name any unmarked Codex file left in place.
 
 ## Done when
@@ -105,7 +105,7 @@ Close with:
 - every Codex override written parses as TOML and opens with the marker comment;
 - In Capstan's own repository, each changed seat's `agents/<role>.md` frontmatter, README's "What this costs" and DESIGN's role table state the approved values, and no `agents/<role>.md` carries the marker;
 - the decision row is written, or the close states that the resolved document home has no `decisions.md` to write it into;
-- the close carries the Architect-session line, and the fresh-session line wherever an override was written.
+- the close carries the Architect-session line, and the fresh-session line wherever an Agent override was written.
 
 ## What this run refuses
 
