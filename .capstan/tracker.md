@@ -56,3 +56,5 @@ capstan_type: tracker
 | tracker-migration | setup-migrate | merged | edfa586 |
 | unchecked-architect | architect-duties | merged | c488159 |
 | unchecked-architect | review-boundary | merged | 41169ac |
+| agent-model-tuning | override-spawn | planned | |
+| agent-model-tuning | agent-models | planned | |
