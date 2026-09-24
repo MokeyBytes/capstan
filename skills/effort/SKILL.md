@@ -24,6 +24,8 @@ You are also the only role that talks to the operator between gates. Everything 
 
 Installed as a plugin these carry its prefix, so the Builder is `capstan:builder`. Spawn whichever form your install produced.
 
+Where `<working copy>/.claude/agents/<role>.md` exists and its first line after the frontmatter is the marker `<!-- capstan-override: capstan@<version> agents/<role>.md -->`, spawn the unscoped `<role>` instead — an Agent override, written only by `agent-models`. A file of that name without the marker is not an override and is ignored, so an unmarked `.claude/agents/builder.md` a user wrote by hand does not hijack the spawn. This holds for all four roles in every phase.
+
 ## Three gates
 
 The run **stops** at each gate. Post the brief, then end your turn.
