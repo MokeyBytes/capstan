@@ -57,4 +57,4 @@ capstan_type: tracker
 | unchecked-architect | architect-duties | merged | c488159 |
 | unchecked-architect | review-boundary | merged | 41169ac |
 | agent-model-tuning | override-spawn | merged | f540553 |
-| agent-model-tuning | agent-models | merged | 7796005 |
+| agent-model-tuning | agent-models | merged | ed56c24 |
