@@ -19,7 +19,7 @@ cp -r capstan/skills/effort ~/.claude/skills/
 
 **The board surface has no manual form.** `capstan-board` is a plugin-install-only feature: its `tracker` and `setup` skills ship only inside that plugin, and a `setup` copied under `~/.claude/skills/` would collide with core's own skill of the same name. See [tracker surface](tracker.md) for what the board needs instead.
 
-**Nor does `agent-models`.** It reads the installed plugin's own `.claude-plugin/plugin.json` to learn the version an override is copied from, and a manual install has no such file for it to find. Retune a manual install's agents by hand instead: edit the `model` and `effort` lines in each copied `agents/<role>.md` directly.
+**Nor does `agent-models`.** It reads the installed plugin's own `.claude-plugin/plugin.json` to learn the version an override is copied from, and a manual install has no such file for it to find. Retune a manual install's agents by hand instead: edit the `model` and `effort` lines in `~/.claude/agents/<role>.md`, and again after each upgrade, since copying a new version over them replaces the edit.
 
 ## Some skills are more than one file
 
