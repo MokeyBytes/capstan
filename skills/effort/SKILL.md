@@ -24,9 +24,9 @@ You are also the only role that talks to the operator between gates. Everything 
 
 Installed as a plugin these carry its prefix, so the Builder is `capstan:builder`. Spawn whichever form your install produced.
 
-**Once per run, before anything is taken** — beside the tracker check in `## Before you start` for phase 1, ahead of `acquire` in `## Every phase begins by re-reading the world` for phases 2 to 4 — check every role under a plugin install: where `<working copy>/.claude/agents/<role>.md` exists and its first line after the frontmatter is the marker `<!-- capstan-override: capstan@<version> agents/<role>.md -->` — an Agent override, written only by `agent-models` — `<role>` must be among the agents this session lists as available. If it is not, stop: report that the override exists but this session has not loaded it, and that a new session, started in the working copy after the override was written, loads it, rather than falling back silently.
+**Once per run, before anything is taken**, check every role under a plugin install: where `<working copy>/.claude/agents/capstan-<role>.md` exists, its frontmatter names `capstan-<role>`, and its first body line is the marker `<!-- capstan-override: capstan@<version> agents/<role>.md -->` — an Agent override, written only by `agent-models` — the session must have started in the working copy, and `capstan-<role>` must be among the agents it lists as available. If either is not true, stop: report that the override exists but this session has not loaded it, and that a new session, started in the working copy after the override was written, loads it, rather than falling back silently.
 
-Spawning then only chooses the form: a role with a marked, loaded override spawns as the unscoped `<role>`; every other role spawns as the form above.
+Spawning then only chooses the form: a role with a marked, loaded override spawns as `capstan-<role>`; every other role spawns as the form above.
 
 Under a manual install, a `.claude/agents/<role>.md` in the folder this session started in replaces the user-level agent whatever its first line says, because Claude Code ranks a project agent above a user one. Report an unmarked one before spawning rather than ignoring it.
 
