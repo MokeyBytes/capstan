@@ -24,7 +24,11 @@ You are also the only role that talks to the operator between gates. Everything 
 
 Installed as a plugin these carry its prefix, so the Builder is `capstan:builder`. Spawn whichever form your install produced.
 
-Where `<working copy>/.claude/agents/<role>.md` exists and its first line after the frontmatter is the marker `<!-- capstan-override: capstan@<version> agents/<role>.md -->`, spawn the unscoped `<role>` instead — an Agent override, written only by `agent-models`. A file of that name without the marker is not an override and is ignored, so an unmarked `.claude/agents/builder.md` a user wrote by hand does not hijack the spawn. This holds for all four roles in every phase.
+Under a plugin install, where `<working copy>/.claude/agents/<role>.md` exists and its first line after the frontmatter is the marker `<!-- capstan-override: capstan@<version> agents/<role>.md -->`, spawn the unscoped `<role>` instead of `capstan:<role>` — an Agent override, written only by `agent-models` — but only when `<role>` is among the agents this session lists as available. If the marked file exists and `<role>` is not listed, stop: report that the override exists but this session has not loaded it, and that a session started in the working copy loads it, rather than falling back silently. Without the marker, spawn the form above, since the file is not an override.
+
+Under a manual install, a project `.claude/agents/<role>.md` replaces the user-level agent whatever its first line says, because Claude Code ranks a project agent above a user one. Report an unmarked one before spawning rather than ignoring it.
+
+This holds in every phase.
 
 ## Three gates
 
