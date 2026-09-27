@@ -53,8 +53,10 @@ Begin by re-reading the world, per [`SKILL.md`](SKILL.md). `<bin>` and `<id>` be
 7. **Remove each worktree once its slice is merged**, so a dead worktree never gets handed to a later Builder:
 
    ```bash
-   git -C <repo> worktree remove <worktrees-dir>/<effort>-<slice>
+   <bin>/capstan-worktree-remove <repo> <worktrees-dir>/<effort>-<slice>
    ```
+
+   Never a bare `git worktree remove`. Compose names a project after the directory it runs in, so each worktree's checks leave their own containers, volumes, networks and built images; the helper removes that project with the worktree. Pass its report on untrimmed where it leaves anything in place.
 
 8. **Settle the version before verifying.** If the repository declares a version, decide whether this effort changes it and record the answer in `decisions.md` in the document home either way, including a no. Where it does, write the new value per the repository's own convention and commit it on the integration branch now. Verification has to cover the commit that ships, and a version written after it is a change nothing verified; `PHASE-4-DELIVER.md` opens by checking exactly that. Do not push it. Delivery hands the push to the operator.
 

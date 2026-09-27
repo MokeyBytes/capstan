@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+#
+# capstan-worktree-remove: remove a slice's worktree and the Docker Compose
+# project its checks left behind.
+#
+# Compose names a project after the directory it runs in, so every worktree a
+# Builder runs `docker compose` in gets its own containers, networks, volumes
+# and built images, and `git worktree remove` touches none of them. This removes
+# the worktree, then deletes everything Docker labels with that worktree's
+# project: the project named after the worktree's directory, plus any project
+# whose containers ran from the worktree or a directory inside it. Pulled
+# images carry no project label and are left alone, since other projects share
+# them. A project whose containers ran from some other directory is left in
+# place and named. Build cache is not per-project and is not touched.
+#
+# Without a reachable Docker daemon only the worktree is removed.
+#
+# Usage:
+#   capstan-worktree-remove <repo> <worktree> [--dry-run] [--force]
+#
+#   --force  passed to `git worktree remove`: discards uncommitted changes
+#
+# Exit codes:
+#   0  done
+#   3  git refused to remove the worktree; Docker was not touched
+#   7  <worktree> is not a linked worktree of <repo>
+#   64 usage error
+
+set -euo pipefail
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 64
+}
+
+die() {
+  local code="$1"; shift
+  printf 'capstan-worktree-remove: %s\n' "$*" >&2
+  exit "$code"
+}
+
+[[ $# -ge 2 ]] || usage
+REPO="$1"; WT_ARG="$2"; shift 2
+DRY=0; FORCE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY=1; shift ;;
+    --force) FORCE="--force"; shift ;;
+    *) usage ;;
+  esac
+done
+
+[[ -d "$WT_ARG" ]] || die 7 "not a directory: $WT_ARG"
+WT=$(cd "$WT_ARG" && pwd)
+WT_REAL=$(cd "$WT_ARG" && pwd -P)
+MAIN=$(git -C "$REPO" worktree list --porcelain 2>/dev/null | awk '/^worktree /{ print substr($0, 10); exit }') \
+  || die 7 "not a git repository: $REPO"
+[[ -n "$MAIN" ]] || die 7 "not a git repository: $REPO"
+[[ "$(cd "$MAIN" && pwd -P)" != "$WT_REAL" ]] || die 7 "refusing to remove the main working copy: $WT"
+listed=0
+while IFS= read -r p; do
+  [[ -d "$p" && "$(cd "$p" && pwd -P)" == "$WT_REAL" ]] && listed=1
+done <<EOF
+$(git -C "$REPO" worktree list --porcelain | awk '/^worktree /{ print substr($0, 10) }')
+EOF
+[[ $listed -eq 1 ]] || die 7 "not a worktree of $REPO: $WT"
+
+# Compose's default project name: the directory's basename, lowercased, with
+# everything outside [a-z0-9_-] dropped.
+DEFAULT_PROJECT=$(basename "$WT" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
+
+docker_up=0
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  docker_up=1
+fi
+
+# Collect projects before the worktree goes: labels outlive it, but reading
+# them first keeps the report in one place.
+# inside: keeps "project<TAB>working_dir" lines whose working_dir is the
+# worktree or a path under it, printing the project.
+inside() {
+  awk -F '\t' -v a="$WT" -v b="$WT_REAL" \
+    '$1 != "" && ($2 == a || $2 == b || index($2, a "/") == 1 || index($2, b "/") == 1) { print $1 }'
+}
+
+PROJECTS=""
+add_project() {
+  [[ -n "$1" ]] || return 0
+  case " $PROJECTS " in *" $1 "*) return 0 ;; esac
+  PROJECTS="${PROJECTS:+$PROJECTS }$1"
+}
+if [[ $docker_up -eq 1 ]]; then
+  add_project "$DEFAULT_PROJECT"
+  while IFS= read -r p; do add_project "$p"; done <<EOF
+$(docker ps -a --format '{{.Label "com.docker.compose.project"}}	{{.Label "com.docker.compose.project.working_dir"}}' | inside)
+EOF
+fi
+
+if [[ $DRY -eq 1 ]]; then
+  printf 'would remove worktree: %s\n' "$WT"
+else
+  # shellcheck disable=SC2086
+  git -C "$REPO" worktree remove $FORCE "$WT" || die 3 "git refused to remove $WT; Docker left untouched"
+  printf 'removed worktree: %s\n' "$WT"
+fi
+
+if [[ $docker_up -eq 0 ]]; then
+  printf 'docker: not reachable, nothing to clean\n'
+  exit 0
+fi
+
+# run KIND COMMAND...: prints and runs one removal, or only prints on --dry-run.
+# A failure is reported and does not stop the rest.
+run() {
+  local kind="$1"; shift
+  if [[ $DRY -eq 1 ]]; then
+    printf 'would remove %s: %s\n' "$kind" "${*: -1}"
+    return 0
+  fi
+  if "$@" >/dev/null 2>&1; then
+    printf 'removed %s: %s\n' "$kind" "${*: -1}"
+  else
+    printf 'could not remove %s: %s\n' "$kind" "${*: -1}"
+  fi
+}
+
+ids() { # KIND PROJECT
+  local f="label=com.docker.compose.project=$2"
+  case "$1" in
+    container) docker ps -aq --filter "$f" ;;
+    network) docker network ls -q --filter "$f" ;;
+    volume) docker volume ls -q --filter "$f" ;;
+    image) docker images -q --filter "$f" | awk '!seen[$0]++' ;;
+  esac
+}
+
+cleaned=0
+for project in $PROJECTS; do
+  # A project whose containers ran from elsewhere belongs to someone else.
+  foreign=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
+    --format '{{.Label "com.docker.compose.project.working_dir"}}' \
+    | awk -v a="$WT" -v b="$WT_REAL" \
+      'NF && $0 != a && $0 != b && index($0, a "/") != 1 && index($0, b "/") != 1 { print; exit }')
+  if [[ -n "$foreign" ]]; then
+    printf 'left in place (project %s has containers from %s): docker project %s\n' "$project" "$foreign" "$project"
+    continue
+  fi
+  n=0
+  for id in $(ids container "$project"); do run container docker rm -f -v "$id"; n=$((n + 1)); done
+  for id in $(ids network "$project"); do run network docker network rm "$id"; n=$((n + 1)); done
+  for id in $(ids volume "$project"); do run volume docker volume rm "$id"; n=$((n + 1)); done
+  for id in $(ids image "$project"); do run image docker rmi -f "$id"; n=$((n + 1)); done
+  [[ $n -gt 0 ]] && cleaned=$((cleaned + 1))
+done
+
+if [[ $cleaned -eq 0 ]]; then
+  printf 'docker: nothing labelled for %s\n' "$WT"
+fi

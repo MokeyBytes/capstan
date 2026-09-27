@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# tests/mock/docker: stands in for docker under tests. Never reaches a daemon.
+#
+# It imitates the calls capstan-worktree-remove makes, from one state file of
+# tab-separated lines: kind, id, compose project, compose working_dir. Kind is
+# container, network, volume or image; the last two fields may be empty.
+#
+# Controlled by environment variables:
+#   DOCKER_MOCK_STATE  the state file; removals delete their line from it
+#   DOCKER_MOCK_DOWN=1 `docker info` fails, as with no daemon running
+#   DOCKER_MOCK_LOG    every argv line is appended here
+
+set -euo pipefail
+
+ARGV="$*"
+if [[ -n "${DOCKER_MOCK_LOG:-}" ]]; then
+  printf '%s\n' "$ARGV" >> "$DOCKER_MOCK_LOG"
+fi
+STATE="${DOCKER_MOCK_STATE:?}"
+touch "$STATE"
+
+unsupported() {
+  printf 'mock docker: unsupported: %s\n' "$ARGV" >&2
+  exit 99
+}
+
+# list KIND: prints id, project, working_dir for KIND, honouring one
+# label=com.docker.compose.project=P filter and a --format naming the labels.
+list() {
+  local kind="$1"; shift
+  local project="" format="" quiet=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -a) shift ;;
+      -q|-aq) quiet=1; shift ;;
+      --filter)
+        case "$2" in
+          label=com.docker.compose.project=*) project="${2#label=com.docker.compose.project=}" ;;
+          *) unsupported ;;
+        esac
+        shift 2 ;;
+      --format) format="$2"; shift 2 ;;
+      *) unsupported ;;
+    esac
+  done
+  awk -F '\t' -v k="$kind" -v p="$project" -v q="$quiet" -v f="$format" '
+    $1 != k { next }
+    p != "" && $3 != p { next }
+    q == 1 { print $2; next }
+    f ~ /project"}}\t/ { print $3 "\t" $4; next }
+    f ~ /working_dir/ { print $4; next }
+    { print $2 }
+  ' "$STATE"
+}
+
+remove() { # KIND ID
+  grep -q "^$1	$2	" "$STATE" || { printf 'No such %s: %s\n' "$1" "$2" >&2; exit 1; }
+  grep -v "^$1	$2	" "$STATE" > "$STATE.tmp" || true
+  mv "$STATE.tmp" "$STATE"
+}
+
+case "${1:-}" in
+  info) [[ "${DOCKER_MOCK_DOWN:-}" == 1 ]] && exit 1; exit 0 ;;
+  ps) shift; list container "$@" ;;
+  images) shift; list image "$@" ;;
+  network|volume)
+    kind="$1"
+    case "${2:-}" in
+      ls) shift 2; list "$kind" "$@" ;;
+      rm) remove "$kind" "$3" ;;
+      *) unsupported ;;
+    esac ;;
+  rm) remove container "${!#}" ;;
+  rmi) remove image "${!#}" ;;
+  *) unsupported ;;
+esac

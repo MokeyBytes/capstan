@@ -68,8 +68,10 @@ It keys on its leading word: `resume` (or a bare invocation with one quick parke
    A conflicting merge follows `resolving-merge-conflicts`. `--no-ff` guarantees a merge commit even on a fast-forward. Move the row to `merged`, carrying the merge commit.
 
    ```bash
-   git -C <working copy> worktree remove <worktrees-dir>/quick-<slug>
+   <bin>/capstan-worktree-remove <working copy> <worktrees-dir>/quick-<slug>
    ```
+
+   `<bin>` is the `bin/` folder beside the `effort` skill's `SKILL.md`. Every worktree removal in this skill goes through it, never a bare `git worktree remove`: it also removes the Docker Compose project the worktree's checks created.
 
    The branch stays, for the operator to remove; step 11 names it.
 10. **Verify.** Run `verify` against the integration, baseline the commit step 5 branched from. Its verified commit goes into step 11's brief; this run holds no claim for `verify`'s claim commands to read or write. A red check does not reopen this quick: row stays `merged`, a decision line names the check and the merge commit, per `decision-record`. The fix is the next quick, under a fresh slug.

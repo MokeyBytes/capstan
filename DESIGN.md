@@ -133,6 +133,8 @@ That field resolves against the **session's** working directory rather than the 
 
 So the Architect runs `git -C <repo> worktree add ...` itself, hands each Builder an absolute path, and removes the worktree after the merge. Nothing ever changes directory, and the flow works from a session rooted anywhere, including somewhere with no repository at all.
 
+Removal goes through `capstan-worktree-remove`, not `git worktree remove`. Docker Compose names a project after the directory it runs in, so a repository whose checks use Compose gets a separate project per worktree: its own images, volumes, networks and containers. Git removes none of them. On one machine that reached well over 100 GB of images, volumes and build cache. The helper removes whatever Docker labels with the worktree's project. It leaves pulled images, which other projects share, and build cache, which Docker does not tag by project.
+
 The related trap: `.capstan/effort/` is gitignored, so an effort's spec, plan, and research do not exist inside any worktree. Builders get absolute paths into the main working copy for those. A Builder that cannot find its brief will invent one.
 
 ## Why a thin executable layer exists
