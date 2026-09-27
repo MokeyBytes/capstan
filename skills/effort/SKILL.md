@@ -56,7 +56,7 @@ Establish the **absolute path** of the repository this effort's work lives in, a
 git -C <abs-path> rev-parse --show-toplevel
 ```
 
-Everything below refers to that path. **It is not necessarily the session's working directory and you must never assume it is.** A session can be rooted anywhere, including somewhere with no repository at all, and that is fine. Address the work by absolute path and the session's own location stops mattering.
+Everything below refers to that path. **It is not necessarily the session's working directory and you must never assume it is.** A session can be rooted anywhere, including somewhere with no repository at all, and that is fine. Address the work by absolute path and the session's own location stops mattering. A session rooted in Capstan's own source repository is the common trap: an effort for any other project claims that project's repository, never Capstan's. The effort's scratch, scout returns and decision rows then live with the project they belong to.
 
 Never `cd`, and never ask for a session to be restarted elsewhere except to load an Agent override, per [the crew](#the-crew). For everything else, `git -C <path>` and absolute paths do what a different working directory would.
 

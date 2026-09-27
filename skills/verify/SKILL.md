@@ -38,7 +38,7 @@ The baseline is `base_commit` in the claim: the commit the effort started from, 
 git -C <repo> worktree add -q <tmp>/verify-baseline $(<bin>/capstan-claim base <repo>)
 ```
 
-Red at the baseline too means pre-existing. Say so, name it, and do not attribute it to a slice. Remove the worktree when you are done with it.
+Red at the baseline too means pre-existing. Say so, name it, and do not attribute it to a slice. Remove the worktree when you are done with it, with `<bin>/capstan-worktree-remove <repo> <tmp>/verify-baseline`, which also removes the Docker Compose project the baseline run created.
 
 Exit 6 means the baseline is unknown: the claim predates the field, or was adopted from one that did. Do not stand `last_observed_head` or any later commit in for it. Those moved at every gate, and a check red there may have gone red inside this effort. Report the verification as degraded on that point, name the red check, and say it could not be classified as pre-existing from the claim. A Builder's own pre-slice check, per `test-first`, may still say what its branch's base looked like; cite that where it exists.
 
