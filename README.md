@@ -51,6 +51,10 @@ For anything smaller, `/capstan:quick` runs one slice through a single gate; see
 
 **Unclear requirements never stop the run.** The crew takes the most defensible reading, logs the assumption, and keeps going. Every assumption surfaces at the next gate, where correcting one costs almost nothing. Four things do stop it: secrets and credentials, anything a third party will see, anything that costs money, and anything destructive or production-facing. The one delete the crew makes on its own is the gitignored scratch, at delivery.
 
+## Built with Capstan
+
+[Yipadoo](https://yipadoo.com/), a paid task-management platform, was built end to end with Capstan. Every feature went through the interview, the three gates, independent review and delivery. Its code is private; the product is live.
+
 ## The disciplines
 
 Four front doors, invoked only by you, none a discipline: [`effort`](skills/effort/SKILL.md) starts a full run, [`quick`](skills/quick/SKILL.md) runs one slice through a single gate, [`setup`](skills/setup/SKILL.md) configures where the artifacts live, and [`agent-models`](skills/agent-models/SKILL.md) tunes the crew's model and effort for Claude and Codex. Installing `capstan-board` adds a fifth, `/capstan-board:setup`, for the tracker surface.
